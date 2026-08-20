@@ -1,50 +1,56 @@
+import json
 from typing import Any
-def extract_course_from_payload(payload: dict[str, Any]):
-    """This is to extract the courses, contraints for groups of coureses (e.g. math1a+1b+c) and footnotes from the page"""
-    courses = [] # store courses
-    series_rules = [] #store constraints for groups of sbjs
+
+def extract_courses_from_payload(payload: dict[str, Any]):
+    courses = []
+    series_rules = []
     notes = []
 
-    for sec in payload.get("templateAssets", []) or []:
-        sending = sec.get("sendingCourse")
-        receiving = sec.get("receivingCourse")
-        is_series = sec.get("isSeries", False)
+    # assist.org stores articulations as a JSON string
+    raw_articulations = payload.get("articulations", [])
+    if isinstance(raw_articulations, str):
+        try:
+            raw_articulations = json.loads(raw_articulations)
+        except Exception:
+            raw_articulations = []
 
-        if sending:
-            prefix = sending.get("prefix", "").strip()
-            num = sending.get("prefix", "").strip()
-            title = sending.get("courseTitle", "").strip()
-            units = float(sending.get("units", 0.0) or 0.0)
+    for art in raw_articulations:
+        art_body = art.get("articulation", {})
+        receiving = art_body.get("course", {})
+        
+        target_prefix = receiving.get("prefix", "").strip() if receiving else ""
+        target_num = receiving.get("courseNumber", "").strip() if receiving else ""
+        target_code = f"{target_prefix} {target_num}".strip() if (target_prefix or target_num) else "Required Major Prep"
 
-            target_prefix = receiving.get("prefix", "").strip() if receiving else ""
-            target_num = receiving.get("courseNumber", "").strip() if receiving else ""
-            target_code = f"{target_prefix} {target_num}".strip() if (target_prefix or target_num) else "Required Course for Transfering"
+        sending_art = art_body.get("sendingArticulation", {})
+        for group in sending_art.get("items", []):
+            for course_item in group.get("items", []):
+                if course_item.get("type") == "Course":
+                    prefix = course_item.get("prefix", "").strip()
+                    num = course_item.get("courseNumber", "").strip()
+                    title = course_item.get("courseTitle", "").strip()
+                    units = float(course_item.get("minUnits", 0.0) or 0.0)
 
-            courses.append({
-                "cc_code": f"{prefix} {num}".strip(),
-                "cc_title": title,
-                "units": units,
-                "target_code": target_code,
-                "is_series": is_series,
-            })
-
-    for note in payload.get("notes", []) or []:
-        if isinstance(note, str) and note.strip():
-            notes.append(note.strip())
+                    courses.append({
+                        "cc_code": f"{prefix} {num}".strip(),
+                        "cc_title": title,
+                        "units": units,
+                        "target_code": target_code,
+                        "is_series": len(group.get("items", [])) > 1
+                    })
 
     return courses, series_rules, notes
 
-def compute_overlap_matrix(aggrements: list[dict[str, Any]]):
-    """This is to calculate cross-uni course overlap matrix and sort by overlap count"""
-    course_map: dict[str, dict[str, Any]] = {}
+def compute_overlap_matrix(agreements: list[dict[str, Any]]):
+    course_map = {}
     all_series_rules = []
     all_notes = []
-    total_targets = len(aggrements)
+    total_targets = len(agreements)
 
-    for ag in aggrements:
+    for ag in agreements:
         target_name = ag.get("target_school_name", "Target")
         payload = ag.get("payload", {})
-        courses, series, notes = extract_course_from_payload(payload)
+        courses, series, notes = extract_courses_from_payload(payload)
 
         all_series_rules.extend(series)
         all_notes.extend(notes)
@@ -58,39 +64,31 @@ def compute_overlap_matrix(aggrements: list[dict[str, Any]]):
                 course_map[code] = {
                     "code": code,
                     "title": c["cc_title"],
-                    "unties": c["units"],
+                    "units": c["units"],
                     "schools": {},
                     "is_series": c["is_series"]
                 }
-
             course_map[code]["schools"][target_name] = c["target_code"]
 
     matrix_rows = []
-
     for code, data in course_map.items():
         matched_count = len(data["schools"])
-
-        if matched_count == total_targets:
-            overlap_type = "Universal"
-        elif matched_count > 1:
-            overlap_type = "Partial"
-        else:
-            overlap_type = "Unique"
+        overlap_type = "Universal" if matched_count == total_targets else ("Partial" if matched_count > 1 else "Unique")
 
         matrix_rows.append({
             "code": code,
             "title": data["title"],
             "units": data["units"],
             "schools": data["schools"],
-            "overlap_count": data["overlap_count"],
+            "overlap_count": matched_count,
             "overlap_type": overlap_type,
-            "is_series": data["is_series"],
+            "is_series": data["is_series"]
         })
 
-    matrix_rows.sort(key = lambda x: x["overlap_count"], reverse = True)
+    matrix_rows.sort(key=lambda x: x["overlap_count"], reverse=True)
     return {
         "matrix": matrix_rows,
-        "series_rule": all_series_rules,
+        "series_rules": all_series_rules,
         "raw_notes": all_notes,
         "total_targets": total_targets
     }

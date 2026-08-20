@@ -41,7 +41,7 @@ def save_agreement(
     cur = conn.cursor()
     cur.execute("""
         INSERT OR REPLACE INTO agreements (year_id, source_school_id, target_school_id, major_name, raw_payload)
-        VALUES(?, ?, ?, ?)
+        VALUES(?, ?, ?, ?, ?)
 """, (year_id, source_id, target_id, major_name, json.dumps(payload)))
     conn.commit()
     conn.close()
