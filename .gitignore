@@ -1,3 +1,4 @@
 docs
 scraper/__pycache__
 backend/__pycache__
+backend/model_planner/__pycache__
