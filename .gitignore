@@ -5,3 +5,9 @@ backend/model_planner/__pycache__
 CA_certificate.pem
 frontend/.local-api-output.log
 frontend/.local-api-error.log
+
+# Local credentials, environments, and backup files
+.env
+.env.local
+.venv311/
+*.before-auth.bak
