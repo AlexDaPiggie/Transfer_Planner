@@ -2,12 +2,35 @@
 .planner-card + .planner-card { margin-top: 14px; }
 .search-add-row { display: flex; gap: 8px; align-items: center; }
 .search-add-row input { flex: 1; min-width: 0; }
+.college-picker { position: relative; }
+.college-suggestions { position: absolute; z-index: 5; top: calc(100% + 7px); left: 0; right: 0; max-height: 280px; overflow-y: auto; padding: 6px; border: 1px solid #dce5eb; border-radius: 12px; background: #fff; box-shadow: 0 14px 32px rgba(22, 42, 58, .16); }
+.college-suggestions[hidden] { display: none; }
+.college-suggestion { display: flex; justify-content: space-between; align-items: center; gap: 12px; width: 100%; padding: 12px 14px; border: 0; border-radius: 8px; background: #fff; color: #263746; font-family: var(--font); font-size: .95rem; font-weight: 700; text-align: left; cursor: pointer; transition: background-color .15s ease, transform .15s ease; }
+.college-suggestion:hover, .college-suggestion:focus-visible { background: #f2f6f9; outline: none; transform: translateX(2px); }
+.college-suggestion.west-valley > span:first-child { color: #17365d; }
+.college-suggestion.foothill > span:first-child { color: #7b252b; }
+.college-suggestion.de-anza > span:first-child { color: #b75519; }
+.university-suggestion > span:first-child { color: var(--school-color); }
+.already-selected { flex: 0 0 auto; color: #637383; font-size: .74rem; font-weight: 600; }
+.primary-selected-option { color: #147d73; }
+.suggestion-empty { margin: 0; padding: 12px 14px; color: #637383; font-size: .88rem; }
 .selection-list { display: grid; gap: 8px; margin-top: 14px; }
 .selection-chip { display: flex; align-items: center; gap: 9px; width: 100%; border: 1px solid var(--border); border-radius: 10px; padding: 9px 10px; background: var(--surface); color: var(--ink); text-align: left; }
 .selection-chip.is-main { border-color: var(--teal); background: var(--teal-soft); }
 .selection-chip label { display: flex; align-items: center; gap: 4px; color: var(--muted); font-size: .82rem; font-weight: 700; }
 .selection-chip span:not([aria-hidden]) { flex: 1; }
-.selection-chip.goal-chip { cursor: pointer; }
+.selection-chip .main-selected-label { flex: 0 0 auto; margin-left: auto; color: var(--teal); font-size: .76rem; font-weight: 700; }
+.selection-chip.goal-chip { cursor: default; }
+.goal-school { display: grid; gap: 7px; }
+.goal-school-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 3px 2px; }
+.goal-school-heading strong { color: var(--school-color); font-size: .95rem; }
+.primary-status { color: var(--muted); font-size: .76rem; font-weight: 700; }
+.primary-status.is-set { color: var(--teal); }
+.goal-type-picker { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 12px; padding: 11px 13px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--ink); font-size: .88rem; }
+.goal-type-picker > span { color: var(--muted); font-weight: 700; }
+.goal-type-picker label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+.goal-type-badge { flex: 0 0 auto !important; margin-left: auto; padding: 4px 8px; border-radius: 999px; background: var(--primary-soft); color: var(--primary); font-size: .72rem; font-weight: 700; }
+.goal-type-badge.alternate { background: #f2edf8; color: #604080; }
 .chip-remove { margin-left: auto; border: 0; background: transparent; color: var(--muted); font-size: 1.25rem; line-height: 1; cursor: pointer; }
 .selection-hint, .main-college-note, .field-message { margin: 10px 0 0; color: var(--muted); font-size: .88rem; line-height: 1.45; }
 .field-message { color: #b45309; min-height: 1.25em; }

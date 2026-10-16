@@ -14,6 +14,9 @@ const plannerState = {
   sourceCatalog: [],
   targetCatalog: [],
   majorCatalog: [],
+  selectedTargetId: null,
+  goalType: "primary",
+  pendingMajor: null,
 };
 
 setTheme(getTheme());
@@ -46,13 +49,14 @@ function itemForName(items, name) {
 function renderCollegeChoices() {
   const area = document.querySelector("#college-choices");
   if (!plannerState.colleges.length) {
-    area.innerHTML = `<p class="selection-hint">Add at least one college. Your first college becomes the main college.</p>`;
+    area.innerHTML = `<p class="selection-hint">Add at least one college, then choose your main college below.</p>`;
     return;
   }
   area.innerHTML = plannerState.colleges.map((college) => `
     <div class="selection-chip ${college.id === plannerState.mainCollegeId ? "is-main" : ""}">
-      <label><input type="radio" name="main-college" value="${college.id}" ${college.id === plannerState.mainCollegeId ? "checked" : ""}> Main</label>
+      <label><input type="radio" name="main-college" value="${college.id}" ${college.id === plannerState.mainCollegeId ? "checked" : ""}> Select as main</label>
       <span>${escapeHtml(college.name)}</span>
+      ${college.id === plannerState.mainCollegeId ? `<span class="main-selected-label">Selected as main college</span>` : ""}
       <button class="chip-remove" type="button" data-remove-college="${college.id}" aria-label="Remove ${escapeHtml(college.name)}">×</button>
     </div>`).join("");
 
@@ -76,10 +80,59 @@ function renderCollegeChoices() {
   });
 }
 
+function renderCollegeSuggestions() {
+  const input = document.querySelector("#college-search");
+  const list = document.querySelector("#college-suggestions");
+  const query = input.value.trim().toLocaleLowerCase();
+  const matches = plannerState.sourceCatalog.filter((college) => !query || college.name.toLocaleLowerCase().includes(query));
+  list.innerHTML = matches.length ? matches.map((college) => {
+    const alreadySelected = plannerState.colleges.some((item) => item.id === college.id);
+    const style = college.name.toLocaleLowerCase().includes("west valley") ? "west-valley" : college.name.toLocaleLowerCase().includes("foothill") ? "foothill" : college.name.toLocaleLowerCase().includes("de anza") ? "de-anza" : "";
+    return `<button type="button" class="college-suggestion ${style}" data-college-id="${college.id}" ${alreadySelected ? "aria-disabled=\"true\"" : ""}><span>${escapeHtml(college.name)}</span>${alreadySelected ? `<span class="already-selected">Already selected</span>` : ""}</button>`;
+  }).join("") : `<p class="suggestion-empty">No matching colleges found.</p>`;
+  list.hidden = false;
+  list.querySelectorAll("[data-college-id]").forEach((button) => button.addEventListener("mousedown", (event) => event.preventDefault()));
+  list.querySelectorAll("[data-college-id]").forEach((button) => button.addEventListener("click", () => {
+    if (button.getAttribute("aria-disabled") === "true") return;
+    addCollege(Number(button.dataset.collegeId));
+    list.hidden = true;
+  }));
+}
+
+function schoolColor(name) {
+  const index = plannerState.targetCatalog.findIndex((school) => school.name === name);
+  // A golden-angle hue step keeps neighboring entries visually distinct as the list grows.
+  const hue = (index < 0 ? 0 : index) * 137.508 + 18;
+  return `hsl(${hue % 360} 58% 34%)`;
+}
+
+function renderUniversitySuggestions() {
+  const input = document.querySelector("#university-search");
+  const list = document.querySelector("#university-suggestions");
+  const query = input.value.trim().toLocaleLowerCase();
+  const matches = plannerState.targetCatalog.filter((school) => !query || school.name.toLocaleLowerCase().includes(query));
+  list.innerHTML = matches.length ? matches.map((school) => {
+    const hasPrimary = plannerState.goals.some((goal) => goal.target_id === school.id && goal.goal_type === "primary");
+    return `<button type="button" class="college-suggestion university-suggestion" style="--school-color:${schoolColor(school.name)}" data-university-id="${school.id}"><span>${escapeHtml(school.name)}</span>${hasPrimary ? `<span class="already-selected primary-selected-option">Primary major selected</span>` : ""}</button>`;
+  }).join("") : `<p class="suggestion-empty">No matching universities found.</p>`;
+  list.hidden = false;
+  list.querySelectorAll("[data-university-id]").forEach((button) => button.addEventListener("mousedown", (event) => event.preventDefault()));
+  list.querySelectorAll("[data-university-id]").forEach((button) => button.addEventListener("click", async () => {
+    const school = plannerState.targetCatalog.find((item) => item.id === Number(button.dataset.universityId));
+    if (!school) return;
+    input.value = school.name;
+    list.hidden = true;
+    await refreshMajorChoices();
+  }));
+}
+
 function renderGoals() {
   const area = document.querySelector("#goals");
   area.innerHTML = plannerState.goals.length
-    ? plannerState.goals.map((goal, index) => `<button class="selection-chip goal-chip" type="button" data-remove-goal="${index}">${escapeHtml(goal.target_name)} · ${escapeHtml(goal.major)} <span aria-hidden="true">×</span></button>`).join("")
+    ? [...new Set(plannerState.goals.map((goal) => goal.target_id))].map((targetId) => {
+      const schoolGoals = plannerState.goals.map((goal, index) => ({ ...goal, index })).filter((goal) => goal.target_id === targetId);
+      return `<div class="goal-school"><div class="goal-school-heading"><strong style="--school-color:${schoolColor(schoolGoals[0].target_name)}">${escapeHtml(schoolGoals[0].target_name)}</strong></div>${schoolGoals.map((goal) => `<div class="selection-chip goal-chip"><span>${escapeHtml(goal.major)}</span><span class="goal-type-badge ${goal.goal_type}">${goal.goal_type === "primary" ? "Primary major" : "Alternate major"}</span><button class="chip-remove" type="button" data-remove-goal="${goal.index}" aria-label="Remove ${escapeHtml(goal.major)}">×</button></div>`).join("")}</div>`;
+    }).join("")
     : `<p class="selection-hint">Add one or more university-major goals.</p>`;
   area.querySelectorAll("[data-remove-goal]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -103,7 +156,12 @@ async function refreshUniversityChoices() {
   const major = document.querySelector("#major-search");
   plannerState.targetCatalog = [];
   plannerState.majorCatalog = [];
+  plannerState.selectedTargetId = null;
+  document.querySelector("#goal-type-picker").hidden = true;
+  plannerState.pendingMajor = null;
   document.querySelector("#university-options").innerHTML = "";
+  document.querySelector("#university-suggestions").innerHTML = "";
+  document.querySelector("#university-suggestions").hidden = true;
   document.querySelector("#major-options").innerHTML = "";
   major.value = "";
   major.disabled = true;
@@ -130,6 +188,8 @@ async function refreshMajorChoices() {
   const university = itemForName(plannerState.targetCatalog, document.querySelector("#university-search").value);
   const major = document.querySelector("#major-search");
   if (!university) {
+    plannerState.selectedTargetId = null;
+    document.querySelector("#goal-type-picker").hidden = true;
     plannerState.majorCatalog = [];
     document.querySelector("#major-options").innerHTML = "";
     major.value = "";
@@ -137,6 +197,10 @@ async function refreshMajorChoices() {
     major.placeholder = "Choose a university first";
     return;
   }
+  plannerState.selectedTargetId = university.id;
+  plannerState.goalType = plannerState.goals.some((goal) => goal.target_id === university.id) ? "alternate" : "primary";
+  plannerState.pendingMajor = null;
+  document.querySelector("#goal-type-picker").hidden = true;
   plannerState.majorCatalog = [];
   document.querySelector("#major-options").innerHTML = "";
   major.disabled = true;
@@ -153,9 +217,9 @@ async function refreshMajorChoices() {
   }
 }
 
-function addCollege() {
+function addCollege(selectedId = null) {
   const input = document.querySelector("#college-search");
-  const college = itemForName(plannerState.sourceCatalog, input.value);
+  const college = selectedId === null ? itemForName(plannerState.sourceCatalog, input.value) : plannerState.sourceCatalog.find((item) => item.id === selectedId);
   if (!college) {
     document.querySelector("#college-message").textContent = "Choose a college from the suggested list.";
     return;
@@ -165,6 +229,7 @@ function addCollege() {
     plannerState.mainCollegeId ??= college.id;
   }
   input.value = "";
+  document.querySelector("#college-suggestions").hidden = true;
   document.querySelector("#college-message").textContent = "";
   plannerState.goals = [];
   renderCollegeChoices();
@@ -174,20 +239,29 @@ function addCollege() {
 }
 
 function addGoal() {
-  const university = itemForName(plannerState.targetCatalog, document.querySelector("#university-search").value);
+  const university = plannerState.targetCatalog.find((item) => item.id === plannerState.selectedTargetId);
+  if (!university || !plannerState.pendingMajor || !plannerState.targetCatalog.some((item) => item.id === university.id)) return;
   const majorInput = document.querySelector("#major-search");
-  const major = itemForName(plannerState.majorCatalog, majorInput.value);
-  if (!university || !major || majorInput.disabled || !plannerState.targetCatalog.some((item) => item.id === university.id)) return;
-  const goal = { target_id: university.id, target_name: university.name, major: major.name };
+  const goal = { target_id: university.id, target_name: university.name, major: plannerState.pendingMajor.name, goal_type: plannerState.goalType };
   if (!plannerState.goals.some((item) => item.target_id === goal.target_id && item.major === goal.major)) plannerState.goals.push(goal);
-  document.querySelector("#university-search").value = "";
+  plannerState.pendingMajor = null;
   majorInput.value = "";
-  majorInput.disabled = true;
-  majorInput.placeholder = "Choose a university first";
-  plannerState.majorCatalog = [];
-  document.querySelector("#major-options").innerHTML = "";
+  document.querySelector("#goal-type-picker").hidden = true;
   renderGoals();
   updatePlanButton();
+}
+
+function prepareMajor() {
+  const major = itemForName(plannerState.majorCatalog, document.querySelector("#major-search").value);
+  if (!major || plannerState.selectedTargetId === null) {
+    plannerState.pendingMajor = null;
+    document.querySelector("#goal-type-picker").hidden = true;
+    return;
+  }
+  plannerState.pendingMajor = major;
+  plannerState.goalType = plannerState.goals.some((goal) => goal.target_id === plannerState.selectedTargetId) ? "alternate" : "primary";
+  document.querySelector(`input[name="goal-type"][value="${plannerState.goalType}"]`).checked = true;
+  document.querySelector("#goal-type-picker").hidden = false;
 }
 
 async function loadPlan() {
@@ -331,32 +405,29 @@ async function chat(event, session, plan) {
 }
 
 async function renderPlanner() {
-  pageTemplate(`<section class="planner-card card"><h2>1. Community colleges</h2><p>Add every California community college where you could take courses. Choosing a suggested college adds it automatically.</p><div class="search-add-row"><input id="college-search" list="college-options" placeholder="Type a college name" autocomplete="off" disabled></div><datalist id="college-options"></datalist><p class="field-message" id="college-message"></p><div class="selection-list" id="college-choices"></div><p class="main-college-note">The first college you add is your main college. When equally useful courses are available at several colleges, it is prioritized.</p></section><section class="planner-card card"><h2>2. University transfer goals</h2><p>Choose a suggested university, then search for a major to add that goal automatically.</p><div class="search-add-row"><input id="university-search" list="university-options" placeholder="Add a community college first" autocomplete="off" disabled></div><datalist id="university-options"></datalist><div class="field"><label for="major-search">Major</label><input id="major-search" list="major-options" placeholder="Choose a university first" autocomplete="off" disabled><datalist id="major-options"></datalist></div><div class="selection-list" id="goals"></div></section><section class="card plan-action"><h2>3. See your plan</h2><p>Pathway ranks verified courses that keep the most transfer options open, giving your main college priority when the options are tied.</p><button class="primary" id="generate" disabled>View plan</button></section><section id="results"></section>`);
+  pageTemplate(`<section class="planner-card card"><h2>1. Community colleges</h2><p>Add every California community college where you could take courses. Choose a suggestion to add it to your list.</p><div class="college-picker"><div class="search-add-row"><input id="college-search" placeholder="Type a college name" autocomplete="off" aria-controls="college-suggestions" aria-autocomplete="list" disabled></div><div id="college-suggestions" class="college-suggestions" role="listbox" hidden></div></div><p class="field-message" id="college-message"></p><div class="selection-list" id="college-choices"></div><p class="main-college-note">Select a main college below. When equally useful courses are available at several colleges, it is prioritized.</p></section><section class="planner-card card"><h2>2. University transfer goals</h2><p>Choose a university, then choose a major and mark it as primary or alternate.</p><div class="college-picker"><div class="search-add-row"><input id="university-search" placeholder="Add a community college first" autocomplete="off" aria-controls="university-suggestions" aria-autocomplete="list" disabled></div><div id="university-suggestions" class="college-suggestions" role="listbox" hidden></div></div><datalist id="university-options"></datalist><div class="field"><label for="major-search">Major</label><input id="major-search" list="major-options" placeholder="Choose a university first" autocomplete="off" disabled><datalist id="major-options"></datalist></div><div id="goal-type-picker" class="goal-type-picker" hidden><span>This major is:</span><label><input type="radio" name="goal-type" value="primary" checked> Primary</label><label><input type="radio" name="goal-type" value="alternate"> Alternate</label><button class="primary add-major-button" type="button" id="add-major">Add major</button></div><div class="selection-list" id="goals"></div></section><section class="card plan-action"><h2>3. See your plan</h2><p>Pathway ranks verified courses that keep the most transfer options open, giving your main college priority when the options are tied.</p><button class="primary" id="generate" disabled>View plan</button></section><section id="results"></section>`);
   renderCollegeChoices();
   renderGoals();
   const collegeInput = document.querySelector("#college-search");
   const universityInput = document.querySelector("#university-search");
-  collegeInput.addEventListener("input", () => {
-    if (itemForName(plannerState.sourceCatalog, collegeInput.value)) addCollege();
-  });
-  collegeInput.addEventListener("change", () => {
-    if (itemForName(plannerState.sourceCatalog, collegeInput.value)) addCollege();
-  });
-  collegeInput.addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); addCollege(); } });
+  collegeInput.addEventListener("focus", renderCollegeSuggestions);
+  collegeInput.addEventListener("input", renderCollegeSuggestions);
+  collegeInput.addEventListener("keydown", (event) => { if (event.key === "Enter") { const match = itemForName(plannerState.sourceCatalog, collegeInput.value); if (match) { event.preventDefault(); addCollege(match.id); } } if (event.key === "Escape") document.querySelector("#college-suggestions").hidden = true; });
+  collegeInput.addEventListener("blur", () => setTimeout(() => { document.querySelector("#college-suggestions").hidden = true; }, 120));
+  universityInput.addEventListener("focus", renderUniversitySuggestions);
+  universityInput.addEventListener("input", renderUniversitySuggestions);
   universityInput.addEventListener("change", refreshMajorChoices);
-  universityInput.addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); refreshMajorChoices(); } });
+  universityInput.addEventListener("keydown", (event) => { if (event.key === "Enter") { const school = itemForName(plannerState.targetCatalog, universityInput.value); if (school) { event.preventDefault(); refreshMajorChoices(); document.querySelector("#university-suggestions").hidden = true; } } if (event.key === "Escape") document.querySelector("#university-suggestions").hidden = true; });
+  universityInput.addEventListener("blur", () => setTimeout(() => { document.querySelector("#university-suggestions").hidden = true; }, 120));
+  document.querySelectorAll("input[name='goal-type']").forEach((radio) => radio.addEventListener("change", () => { plannerState.goalType = radio.value; }));
   const majorInput = document.querySelector("#major-search");
-  majorInput.addEventListener("input", () => {
-    if (itemForName(plannerState.majorCatalog, majorInput.value)) addGoal();
-  });
-  majorInput.addEventListener("change", () => {
-    if (itemForName(plannerState.majorCatalog, majorInput.value)) addGoal();
-  });
-  majorInput.addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); addGoal(); } });
+  majorInput.addEventListener("input", prepareMajor);
+  majorInput.addEventListener("change", prepareMajor);
+  majorInput.addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); prepareMajor(); } });
+  document.querySelector("#add-major").addEventListener("click", addGoal);
   document.querySelector("#generate").addEventListener("click", loadPlan);
   try {
     plannerState.sourceCatalog = await getSources(APP_CONFIG);
-    document.querySelector("#college-options").innerHTML = options(plannerState.sourceCatalog);
     collegeInput.disabled = false;
   } catch (error) {
     showPlannerError(error);
