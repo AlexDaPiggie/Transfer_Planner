@@ -1,0 +1,10 @@
+[
+  {
+    "id": "shared-calculus",
+    "planner_input": {
+      "matrix": [{"course_code": "MATH 1A", "course_name": "Calculus I", "targets": ["UC Davis", "San José State"], "official_url": "https://assist.org"}],
+      "series_rules": ["Complete the approved calculus sequence at one college."],
+      "raw_notes": ["This is a benchmark fixture, not official advice."]
+    }
+  }
+]

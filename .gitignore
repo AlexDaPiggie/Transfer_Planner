@@ -1,0 +1,7 @@
+docs
+scraper/__pycache__
+backend/__pycache__
+backend/model_planner/__pycache__
+CA_certificate.pem
+frontend/.local-api-output.log
+frontend/.local-api-error.log
