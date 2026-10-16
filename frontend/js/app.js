@@ -1,20 +1,35 @@
 import { APP_CONFIG } from "./config.js";
 import { ACTIVE_YEAR_ID, generatePlan, getMajors, getSources, getTargets, sendChat } from "./api.js";
-import { appendMessage, clearSessionMessages, createSession, getAppState, getTheme, selectSession, setTheme } from "./state.js";
+import { appendMessage, clearSessionMessages, createSession, getAppState, getSavedPlanner, getTheme, savePlanner, selectSession, setTheme } from "./state.js";
 import { escapeHtml, renderMessages, renderPlan } from "./ui.js";
 
 const app = document.querySelector("#app");
 const themeButton = document.querySelector("#theme-button");
 let activeChatController = null;
 
+const savedPlanner = getSavedPlanner();
 const plannerState = {
-  colleges: [],
-  goals: [],
-  mainCollegeId: null,
+  colleges: Array.isArray(savedPlanner.selection?.colleges) ? savedPlanner.selection.colleges : [],
+  goals: Array.isArray(savedPlanner.selection?.goals) ? savedPlanner.selection.goals : [],
+  mainCollegeId: Number.isInteger(savedPlanner.selection?.mainCollegeId) ? savedPlanner.selection.mainCollegeId : null,
   sourceCatalog: [],
   targetCatalog: [],
   majorCatalog: [],
 };
+
+function persistPlanner(plan = null) {
+  savePlanner({
+    colleges: plannerState.colleges,
+    goals: plannerState.goals,
+    mainCollegeId: plannerState.mainCollegeId,
+  }, plan);
+}
+
+function invalidateSavedPlan() {
+  persistPlanner();
+  const results = document.querySelector("#results");
+  if (results) results.innerHTML = "";
+}
 
 setTheme(getTheme());
 refreshThemeButton();
@@ -27,7 +42,7 @@ function refreshThemeButton() {
 }
 
 function pageTemplate(content) {
-  app.innerHTML = `<div class="hero"><p class="eyebrow">Verified transfer planning</p><h1>Build a clearer path forward.</h1><p>Add the community colleges you can attend and the university programs you want to keep open. Pathway uses saved Assist agreements to build your plan.</p></div>${content}`;
+  app.innerHTML = `<div class="hero"><h1>Let's make transfer easier</h1><p>Add the community colleges you can attend and the university programs you want to keep open. Pathway uses saved Assist agreements to build your plan.</p></div>${content}`;
 }
 
 function options(items) {
@@ -59,6 +74,7 @@ function renderCollegeChoices() {
   area.querySelectorAll("input[name='main-college']").forEach((radio) => {
     radio.addEventListener("change", () => {
       plannerState.mainCollegeId = Number(radio.value);
+      invalidateSavedPlan();
       renderCollegeChoices();
     });
   });
@@ -68,6 +84,7 @@ function renderCollegeChoices() {
       plannerState.colleges = plannerState.colleges.filter((college) => college.id !== collegeId);
       if (plannerState.mainCollegeId === collegeId) plannerState.mainCollegeId = plannerState.colleges[0]?.id ?? null;
       plannerState.goals = [];
+      invalidateSavedPlan();
       renderCollegeChoices();
       renderGoals();
       await refreshUniversityChoices();
@@ -84,6 +101,7 @@ function renderGoals() {
   area.querySelectorAll("[data-remove-goal]").forEach((button) => {
     button.addEventListener("click", () => {
       plannerState.goals.splice(Number(button.dataset.removeGoal), 1);
+      invalidateSavedPlan();
       renderGoals();
       updatePlanButton();
     });
@@ -167,6 +185,7 @@ function addCollege() {
   input.value = "";
   document.querySelector("#college-message").textContent = "";
   plannerState.goals = [];
+  invalidateSavedPlan();
   renderCollegeChoices();
   renderGoals();
   refreshUniversityChoices();
@@ -186,8 +205,14 @@ function addGoal() {
   majorInput.placeholder = "Choose a university first";
   plannerState.majorCatalog = [];
   document.querySelector("#major-options").innerHTML = "";
+  invalidateSavedPlan();
   renderGoals();
   updatePlanButton();
+}
+
+function showPlan(plan, session) {
+  document.querySelector("#results").innerHTML = `${renderPlan(plan)}<section class="card plan-chat" aria-label="Ask a question about your plan"><form class="plan-chat-form" id="chat-form"><label class="visually-hidden" for="message">Ask a question about your transfer plan</label><textarea id="message" rows="1" placeholder="Ask about courses, articulation, or policies in your plan…" required></textarea><button class="chat-submit" id="chat-submit" type="button" aria-label="Send question"><span aria-hidden="true">›</span></button></form><div class="chat-toolbar"><button class="chat-text-button" id="toggle-answers" type="button" aria-controls="answer-panel" aria-expanded="true" hidden>Show answers</button><button class="chat-text-button" id="clear-chat" type="button" disabled>Clear</button></div><section class="answer-panel" id="answer-panel" aria-label="Questions and answers" aria-live="polite" hidden><div class="messages" id="messages"></div></section></section>`;
+  wirePlanChat(session, plan);
 }
 
 async function loadPlan() {
@@ -210,8 +235,8 @@ async function loadPlan() {
     const savedSession = getAppState().sessions.find((item) => item.contextKey === contextKey);
     const session = savedSession || createSession("My transfer plan", contextKey);
     if (savedSession) selectSession(savedSession.id);
-    document.querySelector("#results").innerHTML = `${renderPlan(plan)}<section class="card plan-chat" aria-label="Ask a question about your plan"><form class="plan-chat-form" id="chat-form"><label class="visually-hidden" for="message">Ask a question about your transfer plan</label><textarea id="message" rows="1" placeholder="Ask about courses, articulation, or policies in your plan…" required></textarea><button class="chat-submit" id="chat-submit" type="button" aria-label="Send question"><span aria-hidden="true">›</span></button></form><div class="chat-toolbar"><button class="chat-text-button" id="toggle-answers" type="button" aria-controls="answer-panel" aria-expanded="true" hidden>Show answers</button><button class="chat-text-button" id="clear-chat" type="button" disabled>Clear</button></div><section class="answer-panel" id="answer-panel" aria-label="Questions and answers" aria-live="polite" hidden><div class="messages" id="messages"></div></section></section>`;
-    wirePlanChat(session, plan);
+    persistPlanner({ data: plan, contextKey });
+    showPlan(plan, session);
   } catch (error) {
     showPlannerError(error);
   } finally {
@@ -358,12 +383,27 @@ async function renderPlanner() {
     plannerState.sourceCatalog = await getSources(APP_CONFIG);
     document.querySelector("#college-options").innerHTML = options(plannerState.sourceCatalog);
     collegeInput.disabled = false;
+    plannerState.colleges = plannerState.colleges
+      .map((college) => plannerState.sourceCatalog.find((item) => item.id === college.id))
+      .filter(Boolean);
+    if (!plannerState.colleges.some((college) => college.id === plannerState.mainCollegeId)) {
+      plannerState.mainCollegeId = plannerState.colleges[0]?.id ?? null;
+    }
+    renderCollegeChoices();
+    renderGoals();
+    updatePlanButton();
+    if (plannerState.colleges.length) await refreshUniversityChoices();
+    if (savedPlanner.plan?.data) {
+      const savedSession = getAppState().sessions.find((item) => item.contextKey === savedPlanner.plan.contextKey);
+      const session = savedSession || createSession("My transfer plan", savedPlanner.plan.contextKey);
+      if (savedSession) selectSession(savedSession.id);
+      showPlan(savedPlanner.plan.data, session);
+    }
   } catch (error) {
     showPlannerError(error);
   }
 }
 
 if (!APP_CONFIG.useDemoData) {
-  document.querySelector(".status").textContent = "● Live connection";
   renderPlanner();
 }

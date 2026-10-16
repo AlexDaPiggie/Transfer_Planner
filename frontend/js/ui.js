@@ -1,55 +1,62 @@
 export function escapeHtml(value = "") { return String(value).replace(/[&<>'"]/g, (char) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", "'":"&#39;", '"':"&quot;" })[char]); }
 
-function renderCollegeGoalStatus(status) {
-  if (status.status === "not_in_database") {
-    return `<article class="college-goal-status"><h4>${escapeHtml(status.college)}</h4><p>Agreement data is not available yet.</p></article>`;
-  }
-  if (status.status === "no_courses") {
-    return `<article class="college-goal-status"><h4>${escapeHtml(status.college)}</h4><p class="coverage-warning">No course articulated.</p>${renderPolicyNotes(status)}</article>`;
-  }
-
-  const courses = (status.courses || []).map((course) => `<li><strong>${escapeHtml(course.course_code)}</strong>${course.course_name ? ` — ${escapeHtml(course.course_name)}` : ""}<span class="course-equivalency"> → ${escapeHtml(course.target_course)}</span>${course.is_series ? " <small>(part of a course group)</small>" : ""}</li>`).join("");
-  return `<article class="college-goal-status"><h4>${escapeHtml(status.college)} <span class="coverage-ok">${status.course_count} articulated course${status.course_count === 1 ? "" : "s"}</span></h4><details class="articulation-details"><summary>View articulated courses</summary><ul class="articulated-courses">${courses}</ul></details>${renderPolicyNotes(status)}</article>`;
+function renderSummaryInline(value = "") {
+  return escapeHtml(value)
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>')
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
 }
 
-function renderPolicyNotes(status) {
-  const notes = [...(status.series_rules || []), ...(status.policy_notes || [])]
-    .filter((note, index, all) => !(status.status === "no_courses" && note.toLowerCase().includes("no course articulated")) && all.indexOf(note) === index);
-  if (!notes.length) return `<p class="no-policy-notes">No additional policy notes were found in the saved agreement.</p>`;
-  return `<div class="policy-notes"><strong>Important notes from Assist</strong><ul>${notes.map((note) => `<li>${escapeHtml(note)}</li>`).join("")}</ul></div>`;
-}
-
-function renderUniversityPlan(target) {
-  const link = target.assist_url ? `<a href="${escapeHtml(target.assist_url)}" target="_blank" rel="noreferrer">Open Assist agreement ↗</a>` : `<span class="muted">No saved agreement link is available yet.</span>`;
-  const colleges = (target.college_statuses || []).map(renderCollegeGoalStatus).join("");
-  return `<article class="card university-plan"><div class="university-plan-heading"><div><p class="eyebrow">University transfer plan</p><h3>${escapeHtml(target.university)}</h3><p class="goal-major">${escapeHtml(target.major)}</p></div>${link}</div><div class="university-college-statuses">${colleges}</div></article>`;
-}
-
-function renderCombinedRoute(recommendedCourses) {
-  const byCollege = new Map();
-  for (const course of recommendedCourses) {
-    if (!byCollege.has(course.source_name)) byCollege.set(course.source_name, []);
-    byCollege.get(course.source_name).push(course);
+function renderSummary(value = "") {
+  const lines = String(value).split(/\r?\n/);
+  const blocks = [];
+  let bullets = [];
+  const flushBullets = () => {
+    if (bullets.length) blocks.push(`<ul>${bullets.map((item) => `<li>${renderSummaryInline(item)}</li>`).join("")}</ul>`);
+    bullets = [];
+  };
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    const bullet = line.match(/^[*-]\s+(.+)/);
+    if (bullet) {
+      bullets.push(bullet[1]);
+      continue;
+    }
+    flushBullets();
+    if (line) blocks.push(`<p>${renderSummaryInline(line)}</p>`);
   }
+  flushBullets();
+  return blocks.join("");
+}
 
-  if (!byCollege.size) return `<p class="notice">No articulated courses are available to combine for the selected goals.</p>`;
-  return [...byCollege.entries()].map(([college, courses]) => {
-    const isMain = courses.some((course) => course.is_main_college);
-    const rows = courses.map((course) => {
-      const goalNames = (course.supported_goals || []).map((goal) => `<li>${escapeHtml(goal)}</li>`).join("");
-      return `<tr><td><strong>${escapeHtml(course.course_code)}</strong><br><small>${escapeHtml(course.course_name)}</small></td><td>${course.supports_count} goal${course.supports_count === 1 ? "" : "s"}<ul class="supported-goals">${goalNames}</ul></td></tr>`;
-    }).join("");
-    return `<article class="card route-college"><h3>${escapeHtml(college)}${isMain ? ` <span class="main-college-badge">Main college</span>` : ""}</h3><div class="table-wrap"><table class="matrix"><thead><tr><th>Course to consider</th><th>University goals it supports</th></tr></thead><tbody>${rows}</tbody></table></div></article>`;
-  }).join("");
+function renderCourseCard(course) {
+  const dots = (course.goals || []).map((goal) => `<span class="university-dot dot-${goal.dot_index % 8}" data-tooltip="${escapeHtml(goal.label)}" role="img" tabindex="0" aria-label="${escapeHtml(goal.label)}"></span>`).join("");
+  const fallbackNotes = (course.fallback_notes || []).map((note) => `<p class="course-fallback-note">${escapeHtml(note)}</p>`).join("");
+  const policyNotes = (course.policy_notes || []).map((note) => `<p class="course-policy-note">${escapeHtml(note)}</p>`).join("");
+  return `<article class="course-board-card ${course.is_main_college ? "is-main" : "is-fallback"}"><div class="course-card-top"><div><h4>${escapeHtml(course.course_code)}</h4><p>${escapeHtml(course.course_name)}</p></div><div class="course-dots" aria-label="Supports ${course.supports_count} university goal${course.supports_count === 1 ? "" : "s"}">${dots}</div></div><div class="course-card-meta"><span>${escapeHtml(course.source_name)}${course.is_main_college ? " · Main college" : " · Fallback college"}</span>${course.units ? `<span>${escapeHtml(course.units)} units</span>` : ""}</div>${policyNotes}${fallbackNotes}</article>`;
+}
+
+function renderUnavailableCourseCard(course) {
+  const dots = (course.goals || []).map((goal) => `<span class="university-dot dot-${goal.dot_index % 8}" data-tooltip="${escapeHtml(goal.label)}" role="img" tabindex="0" aria-label="${escapeHtml(goal.label)}"></span>`).join("");
+  return `<article class="unavailable-course-card"><div class="course-card-top"><div><h4>${escapeHtml(course.course_code)}</h4><p>${escapeHtml(course.course_name)}</p></div><div class="course-dots" aria-label="Required by ${course.supports_count} university goal${course.supports_count === 1 ? "" : "s"}">${dots}</div></div><p class="unavailable-course-reason">${escapeHtml(course.reason)}</p></article>`;
+}
+
+function renderCourseColumn(title, description, courses, kind, renderCard = renderCourseCard, emptyMessage = "No courses in this group were found in the saved Assist agreement.") {
+  const content = courses.length ? courses.map(renderCard).join("") : `<p class="empty-course-column">${escapeHtml(emptyMessage)}</p>`;
+  return `<section class="course-column ${kind}"><div class="course-column-heading"><h3>${title}</h3><p>${description}</p></div><div class="course-card-list">${content}</div></section>`;
+}
+
+function renderCourseBoard(board) {
+  const goalChips = (board.legend || []).map((goal) => `<span class="selected-goal-chip dot-chip-${goal.dot_index % 8}"><span class="university-dot dot-${goal.dot_index % 8}"></span>${escapeHtml(goal.label)}</span>`).join("");
+  const footnotes = (board.footnotes || []).map((note) => `<li>${escapeHtml(note)}</li>`).join("");
+  return `<section class="transfer-board"><div class="transfer-board-goals"><h2>University goals</h2><div class="selected-goal-chips">${goalChips}</div></div><div class="course-board-layout"><div class="course-board-columns">${renderCourseColumn("Recommended", "Courses Assist strongly recommends, but no selected university requires.", board.recommended || [], "recommended")}${renderCourseColumn("Required", "Major preparation courses required for transfer.", board.required || [], "required")}${renderCourseColumn("Not articulated", "University requirements without an articulated option at any selected community college.", board.not_articulated || [], "not-articulated", renderUnavailableCourseCard, "Every listed university requirement has an articulated option at a selected college.")}</div>${footnotes ? `<article class="course-board-footnotes"><h3>Important course-placement notes</h3><ul>${footnotes}</ul></article>` : ""}</div></section>`;
 }
 
 export function renderPlan(plan) {
   if (plan.plan) {
-    const universityPlans = plan.plan.targets.map(renderUniversityPlan).join("");
-    const combinedRoute = renderCombinedRoute(plan.plan.recommended_courses);
-    return `<div class="notice">Use the university-specific sections first to review each agreement. The combined route then highlights courses that may support multiple goals. Verify policies and course details on Assist before enrolling.</div><section class="output-section"><div class="section-heading"><p class="eyebrow">Step 1</p><h2>Plans by university</h2><p>Review the articulation, course options, and notes for each university and major.</p></div><div class="university-plans">${universityPlans}</div></section><section class="output-section combined-output"><div class="section-heading"><p class="eyebrow">Step 2</p><h2>Combined transfer route</h2><p>${plan.plan.coverage.selected_targets} university goal${plan.plan.coverage.selected_targets === 1 ? "" : "s"}. Courses are grouped by community college; shared courses can support more than one goal.</p></div><div class="route-colleges">${combinedRoute}</div><article class="card plain-language"><h3>How to use this route</h3><div>${escapeHtml(plan.summary).replaceAll("\n", "<br>")}</div></article></section>`;
+    const board = plan.plan.course_board || { required: [], recommended: [], not_articulated: [], legend: [], footnotes: [] };
+    return `<div class="notice">This plan uses saved Assist agreement data. Dots show which university goals each course supports. Verify every agreement before enrolling.</div>${renderCourseBoard(board)}`;
   }
   const rows = plan.matrix.map((row) => `<tr><td><strong>${escapeHtml(row.course_code)}</strong><br><small>${escapeHtml(row.course_name)}</small></td><td>${escapeHtml(row.targets.join(", "))}</td><td><a href="${escapeHtml(row.official_url)}" target="_blank" rel="noreferrer">Verify ↗</a></td></tr>`).join("");
-  return `<div class="notice">${plan.isDemo ? "Demo data is shown. Connect FastAPI later to see your live plan." : "Verified plan data"}</div><div class="grid"><article class="card"><h2>Student summary</h2><div>${escapeHtml(plan.summary).replaceAll("\n", "<br>")}</div></article><article class="card"><h2>Series and policy notes</h2><ul>${plan.series_rules.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></article></div><article class="card" style="margin-top:14px"><h2>Course overlap</h2><table class="matrix"><thead><tr><th>Community college course</th><th>Supports</th><th>Source</th></tr></thead><tbody>${rows}</tbody></table></article>`;
+  return `<div class="notice">${plan.isDemo ? "Demo data is shown. Connect FastAPI later to see your live plan." : "Verified plan data"}</div><div class="grid"><article class="card"><h2>Student summary</h2><div>${renderSummary(plan.summary)}</div></article><article class="card"><h2>Series and policy notes</h2><ul>${plan.series_rules.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></article></div><article class="card" style="margin-top:14px"><h2>Course overlap</h2><table class="matrix"><thead><tr><th>Community college course</th><th>Supports</th><th>Source</th></tr></thead><tbody>${rows}</tbody></table></article>`;
 }
 export function renderMessages(messages) { return messages.map((message) => `<article class="message ${escapeHtml(message.role)}"><span class="message-author">${message.role === "user" ? "You" : "Pathway · Model 2"}</span><div class="message-content">${escapeHtml(message.content).replaceAll("\n", "<br>")}</div></article>`).join(""); }

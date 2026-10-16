@@ -25,6 +25,21 @@ export function getAppState() {
 
 export function saveAppState(state) { localStorage.setItem(STATE_KEY, JSON.stringify(state)); }
 
+export function getSavedPlanner() {
+  const state = getAppState();
+  return {
+    selection: state.selection && typeof state.selection === "object" ? state.selection : null,
+    plan: state.plan && typeof state.plan === "object" ? state.plan : null,
+  };
+}
+
+export function savePlanner(selection, plan = null) {
+  const state = getAppState();
+  state.selection = selection;
+  state.plan = plan;
+  saveAppState(state);
+}
+
 export function createSession(title = "New transfer plan", contextKey = null) {
   const state = getAppState();
   const session = { id: crypto.randomUUID?.() || String(Date.now()), title, contextKey, messages: [], createdAt: new Date().toISOString() };

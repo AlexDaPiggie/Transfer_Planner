@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 import json
 import sys
 import subprocess
+from backend.model_planner.matrix_engine import extract_courses_from_payload
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(line_buffering=True)
@@ -86,6 +87,32 @@ def is_up_to_date(
     db_key = row[0]
     return db_key == api_key #true if the date mathches, false if there's new update
 
+def get_saved_agreement(year_id: int, source_id: int, target_id: int, major_name: str):
+    """Return a saved detail payload, if one exists for this exact Assist year."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT raw_json FROM agreements
+        WHERE year_id=%s AND source_school_id=%s AND target_school_id=%s AND major_name=%s
+    """, (year_id, source_id, target_id, major_name))
+    row = cur.fetchone()
+    conn.close()
+    if not row:
+        return None
+    return row[0] if isinstance(row[0], dict) else json.loads(row[0])
+
+def save_if_changed(api: AssistAPI, year_id: int, source_id: int, target_id: int, report: dict):
+    """Fetch and save one report only when Assist's document key has changed."""
+    major = report["label"]
+    key = report["key"]
+    changed = not is_up_to_date(year_id, source_id, target_id, major, key)
+    if changed:
+        detail = fetch_with_retry(api, key)
+        save_agreement(year_id, source_id, target_id, major, key, detail)
+    else:
+        detail = get_saved_agreement(year_id, source_id, target_id, major)
+    return detail or {}, changed
+
 def fetch_with_retry(api: AssistAPI, key: str, max_retries: int = 5):
     """To fetch agreement details again when facing 429 err"""
     for attempt in range(max_retries):
@@ -101,8 +128,14 @@ def fetch_with_retry(api: AssistAPI, key: str, max_retries: int = 5):
                 raise e
     raise Exception(f"Failed after {max_retries} retries for key {key}")
 
+
+def articulated_course_count(detail: dict) -> int:
+    """Count usable sending-college courses in an Assist agreement detail payload."""
+    courses, _, _ = extract_courses_from_payload(detail)
+    return len({course["cc_code"] for course in courses if course.get("cc_code")})
+
 def scrape_all_agreements(
-    year_id: int = 75, 
+    year_id: int = 77,
     delay_seconds: float = 0.8,
     source_school_id: int = None,
     source_school_ids: list[int] = None,
@@ -179,77 +212,80 @@ def scrape_all_agreements(
                     f"cc={ccc_name} | university={uni_name}"
                 )
                 reports = api.get_agreements_list(year_id, ccc["id"], uni["id"])
-                if not reports:
-                    print(
-                        f"PAIR EMPTY | worker={task_index + 1}/{task_count} | "
-                        f"global_cc={real_idx}/{total_ccs} | cc={ccc_name} | university={uni_name} | "
-                        "action=kept_existing_data"
-                    )
-                    continue
-                #Clean up the dead majors in the scraping process
-                offical_majors = [r["label"] for r in reports]
-
-                remove_dead_majors(
-                    year_id,
-                    ccc["id"],
-                    uni["id"],
-                    offical_majors
-                )
-
-                print(f"  -> {uni_name} ({len(reports)} majors found):")
+                fallback_year_id = 76 if year_id == 77 else None
+                report_by_major = {report["label"]: report for report in reports}
+                zero_course_majors = set()
                 saved_for_this_uni = 0
-                update_needed = 0
-                majors_to_download = []
-                
-                #Check what course has been changed
-                for report in reports:
-                    major = report["label"]
-                    api_key = report["key"]
-                    if not is_up_to_date(
-                        year_id,
-                        ccc["id"],
-                        uni["id"],
-                        major,
-                        api_key,
-                    ):
-                        update_needed += 1
-                        majors_to_download.append(report)
+
+                if reports:
+                    remove_dead_majors(year_id, ccc["id"], uni["id"], list(report_by_major))
+                elif year_id == 77:
+                    # An empty current-year report list means old year-77 rows must not mask year-76 fallback.
+                    remove_dead_route(year_id, ccc["id"], uni["id"])
+                    print(
+                        f"PAIR EMPTY | worker={task_index + 1}/{task_count} | cc={ccc_name} | "
+                        f"university={uni_name} | action=cleared_stale_year_{year_id}_rows_checking_year_76"
+                    )
 
                 print(
                     f"PAIR PLAN | worker={task_index + 1}/{task_count} | "
                     f"global_cc={real_idx}/{total_ccs} | cc={ccc_name} | university={uni_name} | "
-                    f"reports={len(reports)} | changed={update_needed} | skipped={len(reports) - update_needed}"
+                    f"year_{year_id}_majors={len(reports)}"
                 )
 
-                #dwonload the updates in a loop
-                for report_idx, report in enumerate(majors_to_download, start = 1):
-                    major = report["label"]
-                    api_key = report["key"]
-                    detail = fetch_with_retry(api, api_key)
-                    save_agreement(
-                        year_id,
-                        ccc["id"],
-                        uni["id"],
-                        major,
-                        api_key,
-                        detail
-                    )
+                # Save current-year reports, and flag explicit no-course agreements for fallback.
+                for report_idx, report in enumerate(reports, start=1):
+                    detail, changed = save_if_changed(api, year_id, ccc["id"], uni["id"], report)
+                    course_count = articulated_course_count(detail)
+                    if not course_count:
+                        zero_course_majors.add(report["label"])
+                    if changed:
+                        total_saved += 1
+                        cc_majors_saved += 1
+                        cc_courses_count += course_count
+                        saved_for_this_uni += 1
+                        print(
+                            f"AGREEMENT SAVED | year={year_id} | cc={ccc_name} | university={uni_name} | "
+                            f"major={report['label']} | courses={course_count} | "
+                            f"progress={report_idx}/{len(reports)}"
+                        )
+                        time.sleep(delay_seconds)
 
-                    raw_art = detail.get("articulations", "[]")
-                    courses_in_major = raw_art.count('"type":"Course"') if isinstance(raw_art, str) else 0
-
-                    total_saved += 1
-                    cc_majors_saved += 1
-                    cc_courses_count += courses_in_major
-                    saved_for_this_uni += 1
-
-                    print(f"     [{report_idx}/{len(reports)}] Saved: {major} (~{courses_in_major} courses) | Total DB: {total_saved} | [{real_idx}/{total_ccs} - {pct:.1f}%] Scraping CC: {ccc_name}")
-                    time.sleep(delay_seconds)
+                fallback_reports = []
+                if fallback_year_id is not None:
+                    current_major_names = set(report_by_major)
+                    fallback_reports = api.get_agreements_list(fallback_year_id, ccc["id"], uni["id"])
+                    fallback_by_major = {report["label"]: report for report in fallback_reports}
+                    fallback_major_names = (set(fallback_by_major) - current_major_names) | zero_course_majors
+                    if fallback_major_names:
+                        print(
+                            f"FALLBACK CHECK | worker={task_index + 1}/{task_count} | cc={ccc_name} | "
+                            f"university={uni_name} | year={fallback_year_id} | "
+                            f"candidate_majors={len(fallback_major_names)}"
+                        )
+                        for fallback_idx, major in enumerate(sorted(fallback_major_names), start=1):
+                            report = fallback_by_major.get(major)
+                            if not report:
+                                print(f"FALLBACK MISSING | year={fallback_year_id} | cc={ccc_name} | university={uni_name} | major={major}")
+                                continue
+                            detail, changed = save_if_changed(api, fallback_year_id, ccc["id"], uni["id"], report)
+                            course_count = articulated_course_count(detail)
+                            if changed:
+                                total_saved += 1
+                                cc_majors_saved += 1
+                                cc_courses_count += course_count
+                                saved_for_this_uni += 1
+                                print(
+                                    f"FALLBACK SAVED | year={fallback_year_id} | cc={ccc_name} | "
+                                    f"university={uni_name} | major={major} | courses={course_count} | "
+                                    f"progress={fallback_idx}/{len(fallback_major_names)}"
+                                )
+                                time.sleep(delay_seconds)
 
                 print(
                     f"PAIR COMPLETE | worker={task_index + 1}/{task_count} | "
                     f"global_cc={real_idx}/{total_ccs} | cc={ccc_name} | university={uni_name} | "
-                    f"downloaded={saved_for_this_uni} | skipped={len(reports) - update_needed}"
+                    f"downloaded={saved_for_this_uni} | current_year_no_course={len(zero_course_majors)}"
                 )
 
             except Exception as e:
@@ -295,8 +331,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--year-id",
         type=int,
-        default=75,
-        help="Academic year ID (default: 75)",
+        default=77,
+        help="Academic year ID (default: 77; uses year 76 for missing or non-articulated results)",
     )
     parser.add_argument(
         "--delay",

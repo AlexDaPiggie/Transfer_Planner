@@ -3,7 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Pathway — Transfer Planner</title>
+  <title>Transfer Pathway</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/variables.css">
   <link rel="stylesheet" href="css/layout.css">
   <link rel="stylesheet" href="css/components.css">
@@ -12,7 +15,22 @@
 <body>
   <div class="app-shell">
     <main class="content">
-      <header class="topbar"><span class="status">● Demo mode</span><button class="theme-toggle" id="theme-button" aria-label="Change color theme">☀ Light</button></header>
+      <header class="topbar">
+        <div class="site-brand" aria-label="Transfer Pathway">
+          <span class="site-brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 32 32" role="img">
+              <path d="M7 24c5.8 0 7.1-4.6 9.1-9.2C18 10.2 20.5 8 25 8" />
+              <path d="M7 8h7" />
+              <path d="M22 24h3" />
+              <circle cx="7" cy="8" r="2" />
+              <circle cx="25" cy="8" r="2" />
+              <circle cx="25" cy="24" r="2" />
+            </svg>
+          </span>
+          <span class="site-brand-name"><span>Transfer</span> <span>Pathway</span></span>
+        </div>
+        <button class="theme-toggle" id="theme-button" aria-label="Change color theme">☀ Light</button>
+      </header>
       <section class="page" id="app"></section>
     </main>
   </div>

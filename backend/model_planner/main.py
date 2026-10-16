@@ -6,6 +6,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from backend.model_planner.course_board import build_course_board
 from backend.model_planner.matrix_engine import compute_overlap_matrix, extract_courses_from_payload
 from backend.model_planner.transfer_plan import build_assist_url, build_transfer_plan
 from models.src.explainer import answer_student_question, generate_student_summary
@@ -45,6 +46,17 @@ def decode_payload(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else json.loads(value)
 
 
+def unpack_agreement_row(row: tuple[Any, ...], requested_year_id: int) -> tuple[int, Any, str]:
+    """Accept both current database rows and legacy two-column fixtures."""
+    if len(row) == 2:
+        return requested_year_id, row[0], row[1]
+    return row[0], row[1], row[2]
+
+def catalog_year_ids(year_id: int) -> list[int]:
+    """Include prior-year catalog entries so unavailable current-year programs remain selectable."""
+    return [year_id, 76] if year_id == 77 else [year_id]
+
+
 @app.get("/api/health")
 def api_health():
     """Confirm that FastAPI is running without requiring a database request."""
@@ -61,9 +73,9 @@ def list_sources(year_id: int = DEFAULT_YEAR_ID):
                     i.institution_name AS institution_name
                 FROM agreements a
                 LEFT JOIN institutions i ON i.institution_id=a.source_school_id
-                WHERE a.year_id=%s
+                WHERE a.year_id = ANY(%s)
             ) AS sources
-            ORDER BY institution_name NULLS LAST, source_school_id""", (year_id,))
+            ORDER BY institution_name NULLS LAST, source_school_id""", (catalog_year_ids(year_id),))
         return [{"id": row[0], "name": row[1] or label_school(row[0], "Community college")} for row in cur.fetchall()]
     finally:
         conn.close()
@@ -81,9 +93,9 @@ def list_targets(source_ids: str, year_id: int = DEFAULT_YEAR_ID):
                     i.institution_name AS institution_name
                 FROM agreements a
                 LEFT JOIN institutions i ON i.institution_id=a.target_school_id
-                WHERE a.year_id=%s AND a.source_school_id = ANY(%s)
+                WHERE a.year_id = ANY(%s) AND a.source_school_id = ANY(%s)
             ) AS targets
-            ORDER BY institution_name NULLS LAST, target_school_id""", (year_id, ids))
+            ORDER BY institution_name NULLS LAST, target_school_id""", (catalog_year_ids(year_id), ids))
         return [{"id": row[0], "name": row[1] or label_school(row[0], "Transfer school")} for row in cur.fetchall()]
     finally:
         conn.close()
@@ -96,7 +108,7 @@ def list_majors(source_ids: str, target_id: int, year_id: int = DEFAULT_YEAR_ID)
     conn = get_db_connection()
     try:
         cur = conn.cursor()
-        cur.execute("SELECT DISTINCT major_name FROM agreements WHERE year_id=%s AND source_school_id = ANY(%s) AND target_school_id=%s ORDER BY major_name", (year_id, ids, target_id))
+        cur.execute("SELECT DISTINCT major_name FROM agreements WHERE year_id = ANY(%s) AND source_school_id = ANY(%s) AND target_school_id=%s ORDER BY major_name", (catalog_year_ids(year_id), ids, target_id))
         return [{"name": row[0]} for row in cur.fetchall()]
     finally:
         conn.close()
@@ -130,18 +142,44 @@ def api_generate_plan(req: PlanRequest):
         ]
         for source_id in req.source_ids:
             for target in req.targets:
-                cur.execute("SELECT raw_json, document_key FROM agreements WHERE year_id=%s AND source_school_id=%s AND target_school_id=%s AND major_name=%s", (req.year_id, source_id, target.target_id, target.major))
+                cur.execute("SELECT year_id, raw_json, document_key FROM agreements WHERE year_id=%s AND source_school_id=%s AND target_school_id=%s AND major_name=%s", (req.year_id, source_id, target.target_id, target.major))
                 row = cur.fetchone()
+                data_year = req.year_id
+                if row:
+                    data_year, raw_payload, document_key = unpack_agreement_row(row, req.year_id)
+                    payload = decode_payload(raw_payload)
+                    current_courses, _, _ = extract_courses_from_payload(payload)
+                    if not any(course.get("cc_code") for course in current_courses) and req.year_id == 77:
+                        cur.execute("SELECT year_id, raw_json, document_key FROM agreements WHERE year_id=76 AND source_school_id=%s AND target_school_id=%s AND major_name=%s", (source_id, target.target_id, target.major))
+                        prior_row = cur.fetchone()
+                        if prior_row:
+                            prior_year, prior_raw_payload, _ = unpack_agreement_row(prior_row, 76)
+                            prior_payload = decode_payload(prior_raw_payload)
+                            prior_courses, _, _ = extract_courses_from_payload(prior_payload)
+                            if any(course.get("cc_code") for course in prior_courses):
+                                row = prior_row
+                                payload = prior_payload
+                                data_year = prior_year
+                elif req.year_id == 77:
+                    cur.execute("SELECT year_id, raw_json, document_key FROM agreements WHERE year_id=76 AND source_school_id=%s AND target_school_id=%s AND major_name=%s", (source_id, target.target_id, target.major))
+                    row = cur.fetchone()
+                    if row:
+                        data_year, _, _ = unpack_agreement_row(row, 76)
                 goal_status = next(item for item in goal_statuses if item["target_id"] == target.target_id and item["major"] == target.major)
                 source_name = label_school(source_id, "Community college")
                 if row:
-                    payload = decode_payload(row[0])
+                    data_year, raw_payload, document_key = unpack_agreement_row(row, data_year)
+                    payload = decode_payload(raw_payload)
                     courses, series_rules, notes = extract_courses_from_payload(payload)
                     course_count = len({course["cc_code"] for course in courses if course["cc_code"]})
-                    goal_status["assist_url"] = goal_status["assist_url"] or build_assist_url(req.year_id, source_id, target.target_id, row[1])
+                    prior_year = data_year != req.year_id
+                    goal_status["assist_url"] = goal_status["assist_url"] or build_assist_url(data_year, source_id, target.target_id, document_key)
                     goal_status["college_statuses"].append({
                         "college": source_name,
                         "status": "articulated" if course_count else "no_courses",
+                        "data_year": data_year,
+                        "is_prior_year": prior_year,
+                        "assist_url": build_assist_url(data_year, source_id, target.target_id, document_key),
                         "course_count": course_count,
                         "courses": [
                             {
@@ -162,7 +200,8 @@ def api_generate_plan(req: PlanRequest):
                         "target_id": target.target_id,
                         "target_name": target.target_name,
                         "major": target.major,
-                        "document_key": row[1],
+                        "year_id": data_year,
+                        "document_key": document_key,
                         "courses": [{"code": item["cc_code"], "title": item["cc_title"], "units": item["units"]} for item in courses if item["cc_code"]],
                         "payload": payload,
                         "series_rules": series_rules,
@@ -172,6 +211,8 @@ def api_generate_plan(req: PlanRequest):
                     goal_status["college_statuses"].append({
                         "college": source_name,
                         "status": "not_in_database",
+                        "data_year": None,
+                        "is_prior_year": False,
                         "course_count": 0,
                     })
     finally:
@@ -180,15 +221,37 @@ def api_generate_plan(req: PlanRequest):
         raise HTTPException(status_code=404, detail="No saved agreement matches that selection. Choose a program listed in the selectors.")
     matrix_result = compute_overlap_matrix(agreements)
     deterministic_plan = build_transfer_plan(agreements, req.year_id, req.main_source_id or req.source_ids[0])
+    fallback_courses = deterministic_plan["recommended_courses"]
+    course_board = build_course_board(
+        agreements=agreements,
+        requested_year_id=req.year_id,
+        source_ids=req.source_ids,
+        main_source_id=req.main_source_id or req.source_ids[0],
+    )
+    board_courses = course_board["required"] + course_board["recommended"]
+    for course in board_courses:
+        course["supported_goals"] = [goal["label"] for goal in course["goals"]]
+    deterministic_plan["recommended_courses"] = board_courses or fallback_courses
+    deterministic_plan["course_board"] = course_board
     deterministic_plan["targets"] = goal_statuses
     deterministic_plan["coverage"]["selected_targets"] = len(goal_statuses)
-    model_input = to_model_input(matrix_result, deterministic_plan)
-    try:
-        technical_plan = generate_technical_plan(model_input)
-        summary = generate_student_summary(StudentSummaryInput(plan=technical_plan))
-    except RuntimeError as error:
-        raise HTTPException(status_code=503, detail=str(error)) from error
-    return {"matrix": to_frontend_matrix(matrix_result), "series_rules": matrix_result["series_rules"], "total_targets": matrix_result["total_targets"], "summary": summary, "technical_plan": technical_plan.model_dump(mode="json"), "plan": deterministic_plan, "isDemo": False}
+    if deterministic_plan["recommended_courses"]:
+        model_input = to_model_input(matrix_result, deterministic_plan)
+        try:
+            technical_plan = generate_technical_plan(model_input)
+            summary = generate_student_summary(StudentSummaryInput(plan=technical_plan))
+            technical_plan_data = technical_plan.model_dump(mode="json")
+        except RuntimeError as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
+    else:
+        summary = "No articulated courses were found for these goals in the selected colleges or the saved prior-year fallback. Check the university-specific results and linked Assist agreements."
+        technical_plan_data = {
+            "summary": summary,
+            "course_priorities": [],
+            "warnings": deterministic_plan["warnings"],
+            "source_urls": [],
+        }
+    return {"matrix": to_frontend_matrix(matrix_result), "series_rules": matrix_result["series_rules"], "total_targets": matrix_result["total_targets"], "summary": summary, "technical_plan": technical_plan_data, "plan": deterministic_plan, "isDemo": False}
 
 @app.post("/api/chat")
 def api_chat(req: ChatRequest):

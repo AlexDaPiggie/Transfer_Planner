@@ -29,11 +29,14 @@ def build_transfer_plan(agreements: list[dict], year_id: int, main_source_id: in
     target_details = []
     for agreement in agreements:
         target_key = f"{agreement['target_id']}::{agreement['major']}"
+        agreement_year_id = agreement.get("year_id", year_id)
         target_details.append({
             "target_key": target_key,
             "university": agreement["target_name"],
             "major": agreement["major"],
-            "assist_url": build_assist_url(year_id, agreement["source_id"], agreement["target_id"], agreement["document_key"]),
+            "data_year": agreement_year_id,
+            "is_prior_year": agreement_year_id != year_id,
+            "assist_url": build_assist_url(agreement_year_id, agreement["source_id"], agreement["target_id"], agreement["document_key"]),
         })
         for course in agreement["courses"]:
             action_key = (agreement["source_id"], course["code"])
@@ -47,7 +50,7 @@ def build_transfer_plan(agreements: list[dict], year_id: int, main_source_id: in
                 "assist_urls": set(),
             })
             action["supports"].add(target_key)
-            action["assist_urls"].add(build_assist_url(year_id, agreement["source_id"], agreement["target_id"], agreement["document_key"]))
+            action["assist_urls"].add(build_assist_url(agreement_year_id, agreement["source_id"], agreement["target_id"], agreement["document_key"]))
 
     recommended = []
     for action in actions.values():

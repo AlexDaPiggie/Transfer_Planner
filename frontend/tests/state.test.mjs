@@ -30,3 +30,11 @@ test("creates and appends messages to local sessions", () => {
   const saved = state.getAppState();
   assert.equal(saved.sessions[0].messages[0].content, "What transfers?");
 });
+
+test("persists a planner selection and generated plan", () => {
+  store.clear();
+  const selection = { colleges: [{ id: 113, name: "De Anza College" }], goals: [{ target_id: 1, target_name: "Example University", major: "Art" }], mainCollegeId: 113 };
+  const plan = { data: { summary: "Saved plan" }, contextKey: "example" };
+  state.savePlanner(selection, plan);
+  assert.deepEqual(state.getSavedPlanner(), { selection, plan });
+});
