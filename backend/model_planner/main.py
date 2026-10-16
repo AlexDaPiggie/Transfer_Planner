@@ -14,7 +14,21 @@ from models.src.planner import generate_technical_plan
 from models.src.schemas import ChatInput, StudentSummaryInput, TechnicalPlanInput
 from scraper.sync_db import get_db_connection
 
+from dotenv import load_dotenv
+from starlette.middleware.sessions import SessionMiddleware
+import os
+import secrets
+from backend.model_planner.auth import router as auth_router
+load_dotenv(".env.local", override=True)
 app = FastAPI(title="Transfer Educational Plan AI Assistant", version="2.0.0")
+auth_secret = os.getenv("PATHWAY_SESSION_SECRET")
+if not auth_secret:
+    if os.getenv("PATHWAY_ENV") == "production":
+        raise RuntimeError("PATHWAY_SESSION_SECRET is required in production")
+    print("[auth] WARNING: ephemeral development session key; logins reset after server restart")
+    auth_secret = secrets.token_urlsafe(48)
+app.add_middleware(SessionMiddleware, secret_key=auth_secret, session_cookie="pathway_session", same_site="lax", https_only=os.getenv("PATHWAY_ENV") == "production")
+app.include_router(auth_router)
 app.add_middleware(CORSMiddleware, allow_credentials=True, allow_headers=["*"], allow_methods=["*"], allow_origins=["http://localhost:5500", "http://127.0.0.1:5500"], allow_origin_regex=r"http://(localhost|127\.0\.0\.1):\d+")
 DEFAULT_YEAR_ID = 77
 SOURCE_NAMES = {
