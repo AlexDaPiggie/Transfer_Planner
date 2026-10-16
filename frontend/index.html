@@ -1,20 +1,27 @@
+
 <!doctype html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Transfer Pathway</title>
+
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+
   <link rel="stylesheet" href="css/variables.css">
   <link rel="stylesheet" href="css/layout.css">
   <link rel="stylesheet" href="css/components.css">
   <link rel="stylesheet" href="css/planner.css">
+  <link rel="stylesheet" href="css/auth.css">
 </head>
+
 <body>
   <div class="app-shell">
     <main class="content">
+
+      <!-- Main navigation -->
       <header class="topbar">
         <div class="site-brand" aria-label="Transfer Pathway">
           <span class="site-brand-mark" aria-hidden="true">
@@ -27,13 +34,99 @@
               <circle cx="25" cy="24" r="2" />
             </svg>
           </span>
-          <span class="site-brand-name"><span>Transfer</span> <span>Pathway</span></span>
+
+          <span class="site-brand-name">
+            <span>Transfer</span> <span>Pathway</span>
+          </span>
         </div>
-        <button class="theme-toggle" id="theme-button" aria-label="Change color theme">☀ Light</button>
+
+        <button
+          class="theme-toggle"
+          id="theme-button"
+          aria-label="Change color theme"
+        >
+          ☀ Light
+        </button>
+
+        <div id="auth-controls" class="auth-controls"></div>
       </header>
+
+      <!-- Main application -->
       <section class="page" id="app"></section>
+
     </main>
   </div>
+
+  <!-- Main application JavaScript -->
   <script type="module" src="js/app.js"></script>
+
+  <!-- Authentication dialog -->
+  <dialog
+    id="auth-dialog"
+    class="auth-dialog"
+    aria-labelledby="auth-subtitle"
+  >
+    <button
+      type="button"
+      class="auth-close"
+      id="auth-close"
+      aria-label="Close"
+    >
+      ×
+    </button>
+
+    <h2 id="auth-subtitle">Welcome back to Pathway</h2>
+
+    <form id="auth-form">
+      <label for="auth-email">Email address</label>
+      <input
+        id="auth-email"
+        type="email"
+        name="email"
+        autocomplete="email"
+        required
+      >
+
+      <label for="auth-password">Password</label>
+      <input
+        id="auth-password"
+        type="password"
+        name="password"
+        autocomplete="current-password"
+        minlength="10"
+        required
+      >
+
+      <button
+        class="auth-primary"
+        id="auth-submit"
+        type="submit"
+      >
+        Log in
+      </button>
+
+      <button
+        class="auth-text"
+        id="auth-toggle"
+        type="button"
+      >
+        Need an account? Sign up
+      </button>
+
+      <p
+        class="auth-message"
+        id="auth-message"
+        role="alert"
+      ></p>
+    </form>
+
+    <div class="auth-divider">or</div>
+
+    <div id="google-signin"></div>
+  </dialog>
+
+  <!-- Authentication JavaScript -->
+  <script type="module" src="js/auth.js"></script>
+
 </body>
 </html>
