@@ -54,13 +54,13 @@ function renderCourseColumn(title, description, courses, kind, renderCard = rend
 }
 
 function renderOptionCourse(course) {
-  return `<div class="equivalency-course"><strong>${escapeHtml(course.code)}</strong></div>`;
+  return `<div class="equivalency-course" data-source-id="${escapeHtml(course.source_id)}" data-course-code="${escapeHtml(course.code)}" data-completion-part="${course.completion_part}" data-course-conjunction="${course.conjunction === "or" ? "or" : "and"}"><strong>${escapeHtml(course.code)}</strong></div>`;
 }
 
 function renderArticulationOptions(options, optionGroupId, group, choiceSetId = null, choiceIndex = null) {
   const optionsMarkup = options.map((option, optionIndex) => {
     const parts = option.groups || [{ courses: option.courses || [], conjunction: option.conjunction || "and" }];
-    const contents = parts.map((part, partIndex) => `${partIndex ? `<span class="equivalency-conjunction">and</span>` : ""}${(part.courses || []).map((course, courseIndex) => `${courseIndex ? `<span class="equivalency-conjunction">${part.conjunction === "or" ? "or" : "and"}</span>` : ""}${renderOptionCourse({ ...course, source_name: group.source_name })}`).join("")}`).join("");
+    const contents = parts.map((part, partIndex) => `${partIndex ? `<span class="equivalency-conjunction">and</span>` : ""}${(part.courses || []).map((course, courseIndex) => `${courseIndex ? `<span class="equivalency-conjunction">${part.conjunction === "or" ? "or" : "and"}</span>` : ""}${renderOptionCourse({ ...course, source_id: group.source_id, source_name: group.source_name, completion_part: partIndex, conjunction: part.conjunction })}`).join("")}`).join("");
     return `<div class="equivalency-option" data-option-group="${optionGroupId}" data-option-index="${optionIndex}" ${optionIndex ? "hidden" : ""}>${contents}</div>`;
   }).join("");
   const switcher = options.length > 1

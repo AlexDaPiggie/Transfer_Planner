@@ -76,6 +76,13 @@ function decorateCard(card) {
 }
 function drawUniversityCompletions() {
   for (const university of document.querySelectorAll("#results .university-course-plan")) {
+    for (const column of university.querySelectorAll(".course-column.required, .course-column.recommended")) {
+      if (!column.querySelector(".course-completion-status")) {
+        const status = make("p", "course-completion-status");
+        status.setAttribute("role", "status");
+        column.append(status);
+      }
+    }
     for (const row of university.querySelectorAll(".equivalency-course[data-source-id][data-course-code]")) {
       const isDone = !!user && ready && cardVariants(row).some(entry => completed.has(entry.key));
       row.classList.toggle("is-completed-course", isDone);
@@ -87,20 +94,27 @@ function drawUniversityCompletions() {
       badge.hidden = !isDone;
       decorateCard(row);
       const button = row.querySelector('.course-completion-button');
-      button.textContent = !user ? 'Log in to track' : !ready ? 'Loading...' : isDone ? 'Undo' : 'Mark complete';
+      button.textContent = !ready ? 'Loading...' : !user ? 'Log in to track' : isDone ? 'Undo' : 'Mark complete';
       button.disabled = !user || !ready || saving;
       const picker = row.querySelector('.course-variant-select');
       if (picker) picker.disabled = !user || !ready || saving || isDone;
     }
     for (const group of university.querySelectorAll(".equivalency-group:not(.not-articulated-group)")) {
-      const isDone = [...group.querySelectorAll('.equivalency-option')].filter(option => {
-        const choiceCard = option.closest('.course-choice-card');
-        return !option.hidden && !choiceCard?.hidden;
-      }).some(option => {
-        const rows = [...option.querySelectorAll('.equivalency-course')];
-        return rows.length > 0 && (option.dataset.courseConjunction === 'or'
-          ? rows.some(row => row.classList.contains('is-completed-course'))
-          : rows.every(row => row.classList.contains('is-completed-course')));
+      // All alternatives satisfy this requirement, including hidden options.
+      // Keep actual course completion independent of requirement satisfaction.
+      const isDone = [...group.querySelectorAll('.equivalency-option')].some(option => {
+        const parts = new Map();
+        for (const row of option.querySelectorAll('.equivalency-course')) {
+          const key = row.dataset.completionPart || '0';
+          if (!parts.has(key)) parts.set(key, []);
+          parts.get(key).push(row);
+        }
+        return parts.size > 0 && [...parts.values()].every(rows => {
+          const done = row => row.classList.contains('is-completed-course');
+          return rows[0].dataset.courseConjunction === 'or'
+            ? rows.some(done)
+            : rows.every(done);
+        });
       });
       group.classList.toggle("is-completed-requirement", isDone);
     }
@@ -126,7 +140,7 @@ function draw() {
       const button = control.querySelector("button");
       if (picker && isDone) picker.value = matched.code;
       if (picker) picker.disabled = !user || !ready || saving || isDone;
-      button.textContent = !user ? "Log in to track" : !ready ? "Loading..." : isDone ? "Undo" : "Mark complete";
+      button.textContent = !ready ? "Loading..." : !user ? "Log in to track" : isDone ? "Undo" : "Mark complete";
       button.disabled = !user || !ready || saving;
       (isDone ? finishedList : pending).append(card);
     }
@@ -156,15 +170,14 @@ async function api(path, options = {}) {
 
 async function refresh() {
   const current = ++loadVersion;
-  user = null;
   ready = false;
-  completed = new Set();
   draw();
   if (!activeBoard?.isConnected) return;
   try {
     const auth = await api("/api/auth/me");
     if (current !== loadVersion) return;
     user = auth.logged_in ? auth.user : null;
+    completed = new Set();
     if (user) {
       const data = await api("/api/completed-courses");
       if (current !== loadVersion) return;
@@ -176,7 +189,7 @@ async function refresh() {
     if (current !== loadVersion) return;
     ready = false;
     draw();
-    for (const column of activeBoard.querySelectorAll(".course-column.recommended, .course-column.required")) {
+    for (const column of document.querySelectorAll("#results .course-column.recommended, #results .course-column.required")) {
       showStatus(column, `Could not load completed courses: ${error.message}`, true);
     }
   }
@@ -232,7 +245,8 @@ export function mountCompletedCourses(plan) {
     });
     wiredBoards.add(board);
   }
-  refresh();
+  if (ready) draw();
+  else refresh();
 }
 
 document.addEventListener('click', event => {
@@ -240,4 +254,9 @@ document.addEventListener('click', event => {
   if (button) toggleCompleted(button);
 });
 
-window.addEventListener("pathway:auth-changed", () => { if (activeBoard?.isConnected) refresh(); });
+window.addEventListener("pathway:auth-changed", (event) => {
+  user = event.detail?.user || null;
+  completed = new Set();
+  ready = false;
+  if (activeBoard?.isConnected) refresh();
+});
