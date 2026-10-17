@@ -29,6 +29,8 @@ if not auth_secret:
     auth_secret = secrets.token_urlsafe(48)
 app.add_middleware(SessionMiddleware, secret_key=auth_secret, session_cookie="pathway_session", same_site="lax", https_only=os.getenv("PATHWAY_ENV") == "production")
 app.include_router(auth_router)
+from backend.model_planner.completed_courses import router as completed_courses_router
+app.include_router(completed_courses_router)
 app.add_middleware(CORSMiddleware, allow_credentials=True, allow_headers=["*"], allow_methods=["*"], allow_origins=["http://localhost:5500", "http://127.0.0.1:5500"], allow_origin_regex=r"http://(localhost|127\.0\.0\.1):\d+")
 DEFAULT_YEAR_ID = 77
 SOURCE_NAMES = {

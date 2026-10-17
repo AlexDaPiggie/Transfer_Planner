@@ -30,6 +30,7 @@ async function authRequest(path, method = "GET", body = null) {
 }
 
 function drawControls(user) {
+  window.dispatchEvent(new CustomEvent("pathway:auth-changed", { detail: { user } }));
   controls.replaceChildren();
   if (!user) {
     const signIn = document.createElement("button");

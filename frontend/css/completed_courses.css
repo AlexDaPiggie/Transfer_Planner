@@ -1,0 +1,17 @@
+/* Course completion controls: scoped so existing Pathway styles remain untouched. */
+.course-completion-controls { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.course-variant-select { max-width: 100%; width: 100%; padding: 7px 9px; border-radius: 7px; border: 1px solid #aab4c2; background: transparent; color: inherit; font: inherit; }
+.course-completion-button { width: 100%; padding: 8px 10px; border: 1px solid #8394a7; border-radius: 8px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.course-completion-button:hover:not(:disabled) { background: rgba(111, 143, 161, 0.12); }
+.course-completion-button:disabled { opacity: 0.55; cursor: not-allowed; }
+.course-completed-section { border-top: 1px solid #8c9ba8; margin-top: 22px; padding-top: 14px; }
+.course-completed-section[hidden] { display: none; }
+.course-completed-heading { margin: 0 0 12px; font-size: 1rem; }
+.course-completed-list { display: grid; gap: 12px; }
+.is-completed-course { opacity: 0.8; }
+.is-completed-course .course-completion-button { border-color: #597e6c; }
+.course-completion-status { font-size: 0.83rem; opacity: 0.8; margin: 6px 0; }
+.course-completion-status:empty { display: none; }
+.course-completion-status.is-error { color: #aa3e3e; opacity: 1; }
+.course-all-completed { font-size: 0.9rem; opacity: 0.8; }
+.course-all-completed[hidden] { display: none; }
