@@ -205,7 +205,9 @@ async function refreshUniversityChoices() {
   document.querySelector("#university-options").innerHTML = "";
   document.querySelector("#university-suggestions").innerHTML = "";
   document.querySelector("#university-suggestions").hidden = true;
-  document.querySelector("#major-options").innerHTML = "";
+  document.querySelector("#major-suggestions").innerHTML = "";
+  document.querySelector("#major-suggestions").hidden = true;
+  major.setAttribute("aria-expanded", "false");
   major.value = "";
   major.disabled = true;
   major.placeholder = "Choose a university first";
@@ -234,7 +236,9 @@ async function refreshMajorChoices() {
     plannerState.selectedTargetId = null;
     document.querySelector("#goal-type-picker").hidden = true;
     plannerState.majorCatalog = [];
-    document.querySelector("#major-options").innerHTML = "";
+    document.querySelector("#major-suggestions").innerHTML = "";
+    document.querySelector("#major-suggestions").hidden = true;
+    major.setAttribute("aria-expanded", "false");
     major.value = "";
     major.disabled = true;
     major.placeholder = "Choose a university first";
@@ -245,19 +249,47 @@ async function refreshMajorChoices() {
   plannerState.pendingMajor = null;
   document.querySelector("#goal-type-picker").hidden = true;
   plannerState.majorCatalog = [];
-  document.querySelector("#major-options").innerHTML = "";
+  document.querySelector("#major-suggestions").innerHTML = "";
+  document.querySelector("#major-suggestions").hidden = true;
+  major.setAttribute("aria-expanded", "false");
   major.disabled = true;
   major.value = "";
   major.placeholder = "Loading majors…";
   try {
     const majors = await getMajors(selectedCollegeIds(), university.id, APP_CONFIG);
     plannerState.majorCatalog = majors;
-    document.querySelector("#major-options").innerHTML = options(majors);
     major.disabled = !majors.length;
     major.placeholder = majors.length ? "Search for a major" : "No saved majors";
   } catch (error) {
     showPlannerError(error);
   }
+}
+
+function renderMajorSuggestions() {
+  const input = document.querySelector("#major-search");
+  const list = document.querySelector("#major-suggestions");
+  const university = plannerState.targetCatalog.find((item) => item.id === plannerState.selectedTargetId);
+  const query = input.value.trim().toLocaleLowerCase();
+  const matches = plannerState.majorCatalog.filter((major) => !query || major.name.toLocaleLowerCase().includes(query));
+  const color = university ? schoolColor(university.name) : "var(--primary)";
+  list.innerHTML = matches.length ? matches.map((major) => {
+    const index = plannerState.majorCatalog.indexOf(major);
+    return `<button type="button" role="option" aria-selected="false" class="college-suggestion major-suggestion" style="--school-color:${color}" data-major-index="${index}"><span>${escapeHtml(major.name)}</span></button>`;
+  }).join("") : `<p class="suggestion-empty">No matching majors found.</p>`;
+  list.hidden = false;
+  input.setAttribute("aria-expanded", "true");
+  list.querySelectorAll("[data-major-index]").forEach((button) => {
+    button.addEventListener("mousedown", (event) => event.preventDefault());
+    button.addEventListener("click", () => {
+      const major = plannerState.majorCatalog[Number(button.dataset.majorIndex)];
+      if (!major) return;
+      input.value = major.name;
+      list.hidden = true;
+      input.setAttribute("aria-expanded", "false");
+      prepareMajor();
+      input.focus({ preventScroll: true });
+    });
+  });
 }
 
 function addCollege(selectedId = null) {
@@ -290,6 +322,8 @@ function addGoal() {
   if (!plannerState.goals.some((item) => item.target_id === goal.target_id && item.major === goal.major)) plannerState.goals.push(goal);
   plannerState.pendingMajor = null;
   majorInput.value = "";
+  document.querySelector("#major-suggestions").hidden = true;
+  majorInput.setAttribute("aria-expanded", "false");
   // Keep the selected university's majors available for an alternate major.
   document.querySelector("#goal-type-picker").hidden = true;
   invalidateSavedPlan();
@@ -504,7 +538,7 @@ async function chat(event, session, plan) {
 }
 
 async function renderPlanner() {
-  pageTemplate(`<section class="planner-card card"><h2>1. Community colleges</h2><p>Add community colleges that you can attend.</p><div class="college-picker"><div class="search-add-row"><input id="college-search" placeholder="Type a college name" autocomplete="off" aria-controls="college-suggestions" aria-autocomplete="list" disabled></div><div id="college-suggestions" class="college-suggestions" role="listbox" hidden></div></div><p class="field-message" id="college-message"></p><div class="selection-list" id="college-choices"></div><p class="main-college-note">Courses will be prioritized to be taken at the main college.</p></section><section class="planner-card card"><h2>2. University transfer goals</h2><p>Choose a university, then choose a major and mark it as primary or alternate.</p><div class="college-picker"><div class="search-add-row"><input id="university-search" placeholder="Add a community college first" autocomplete="off" aria-controls="university-suggestions" aria-autocomplete="list" disabled></div><div id="university-suggestions" class="college-suggestions" role="listbox" hidden></div></div><datalist id="university-options"></datalist><div class="field"><label for="major-search">Major</label><input id="major-search" list="major-options" placeholder="Choose a university first" autocomplete="off" disabled><datalist id="major-options"></datalist></div><div id="goal-type-picker" class="goal-type-picker" hidden><span>This major is:</span><label><input type="radio" name="goal-type" value="primary" checked> Primary</label><label><input type="radio" name="goal-type" value="alternate"> Alternate</label><button class="primary add-major-button" type="button" id="add-major">Add major</button></div><div class="selection-list" id="goals"></div></section><section class="card plan-action"><h2>3. See your plan</h2><p>Click "View plan" and wait a few seconds for the courses table to be created.</p><button class="primary" id="generate" disabled>View plan</button></section><section id="results"></section>`);
+  pageTemplate(`<section class="planner-card card"><h2>1. Community colleges</h2><p>Add community colleges that you can attend.</p><div class="college-picker"><div class="search-add-row"><input id="college-search" placeholder="Type a college name" autocomplete="off" aria-controls="college-suggestions" aria-autocomplete="list" disabled></div><div id="college-suggestions" class="college-suggestions" role="listbox" hidden></div></div><p class="field-message" id="college-message"></p><div class="selection-list" id="college-choices"></div><p class="main-college-note">Courses will be prioritized to be taken at the main college.</p></section><section class="planner-card card"><h2>2. University transfer goals</h2><p>Choose a university, then choose a major and mark it as primary or alternate.</p><div class="college-picker"><div class="search-add-row"><input id="university-search" placeholder="Add a community college first" autocomplete="off" aria-controls="university-suggestions" aria-autocomplete="list" disabled></div><div id="university-suggestions" class="college-suggestions" role="listbox" hidden></div></div><datalist id="university-options"></datalist><div class="field"><label for="major-search">Major</label><div class="college-picker"><input id="major-search" placeholder="Choose a university first" autocomplete="off" aria-controls="major-suggestions" aria-autocomplete="list" aria-expanded="false" disabled><div id="major-suggestions" class="college-suggestions" role="listbox" hidden></div></div></div><div id="goal-type-picker" class="goal-type-picker" hidden><span>This major is:</span><label><input type="radio" name="goal-type" value="primary" checked> Primary</label><label><input type="radio" name="goal-type" value="alternate"> Alternate</label><button class="primary add-major-button" type="button" id="add-major">Add major</button></div><div class="selection-list" id="goals"></div></section><section class="card plan-action"><h2>3. See your plan</h2><p>Click "View plan" and wait a few seconds for the courses table to be created.</p><button class="primary" id="generate" disabled>View plan</button></section><section id="results"></section>`);
   renderCollegeChoices();
   renderGoals();
   const collegeInput = document.querySelector("#college-search");
@@ -520,9 +554,38 @@ async function renderPlanner() {
   universityInput.addEventListener("blur", () => setTimeout(() => { document.querySelector("#university-suggestions").hidden = true; }, 120));
   document.querySelectorAll("input[name='goal-type']").forEach((radio) => radio.addEventListener("change", () => { plannerState.goalType = radio.value; }));
   const majorInput = document.querySelector("#major-search");
-  majorInput.addEventListener("input", prepareMajor);
+  majorInput.addEventListener("focus", renderMajorSuggestions);
+  majorInput.addEventListener("input", () => { renderMajorSuggestions(); prepareMajor(); });
   majorInput.addEventListener("change", prepareMajor);
-  majorInput.addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); prepareMajor(); } });
+  majorInput.addEventListener("keydown", (event) => {
+    const list = document.querySelector("#major-suggestions");
+    if (event.key === "ArrowDown" && !list.hidden) {
+      event.preventDefault();
+      list.querySelector("[data-major-index]")?.focus();
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      const match = itemForName(plannerState.majorCatalog, majorInput.value);
+      if (match) prepareMajor();
+      else list.querySelector("[data-major-index]")?.click();
+    } else if (event.key === "Escape") {
+      list.hidden = true;
+      majorInput.setAttribute("aria-expanded", "false");
+    }
+  });
+  majorInput.addEventListener("blur", () => setTimeout(() => {
+    const list = document.querySelector("#major-suggestions");
+    if (!list.contains(document.activeElement)) {
+      list.hidden = true;
+      majorInput.setAttribute("aria-expanded", "false");
+    }
+  }, 120));
+  document.querySelector("#major-suggestions").addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      document.querySelector("#major-suggestions").hidden = true;
+      majorInput.setAttribute("aria-expanded", "false");
+      majorInput.focus({ preventScroll: true });
+    }
+  });
   document.querySelector("#add-major").addEventListener("click", addGoal);
   document.querySelector("#generate").addEventListener("click", loadPlan);
   try {

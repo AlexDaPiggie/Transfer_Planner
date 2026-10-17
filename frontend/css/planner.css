@@ -11,6 +11,12 @@
 .college-suggestion.foothill > span:first-child { color: #7b252b; }
 .college-suggestion.de-anza > span:first-child { color: #b75519; }
 .university-suggestion > span:first-child { color: var(--school-color); }
+.major-suggestion > span:first-child { color: var(--school-color); }
+body[data-theme="dark"] .college-suggestion.west-valley > span:first-child { color: #8dbbff; }
+body[data-theme="dark"] .college-suggestion.foothill > span:first-child { color: #ff929e; }
+body[data-theme="dark"] .college-suggestion.de-anza > span:first-child { color: #ffb277; }
+body[data-theme="dark"] .university-suggestion > span:first-child,
+body[data-theme="dark"] .major-suggestion > span:first-child { color: color-mix(in srgb, var(--school-color) 50%, #fff); }
 .already-selected { flex: 0 0 auto; color: #637383; font-size: .74rem; font-weight: 600; }
 .primary-selected-option { color: #147d73; }
 .suggestion-empty { margin: 0; padding: 12px 14px; color: #637383; font-size: .88rem; }

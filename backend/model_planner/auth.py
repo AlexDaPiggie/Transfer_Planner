@@ -39,11 +39,20 @@ class ResetPassword(BaseModel):
 
 def _require_origin(request: Request) -> None:
     """Block CSRF on cookie-authenticated POST endpoints (including sign-in)."""
-    origins = os.getenv(
+    configured_origins = os.getenv(
         "PATHWAY_ALLOWED_ORIGINS",
         "http://localhost:8080,http://127.0.0.1:8080,http://localhost:8081,http://127.0.0.1:8081",
     ).split(",")
-    if (request.headers.get("origin") not in [x.strip() for x in origins]
+    allowed_origins = {origin.strip().rstrip("/") for origin in configured_origins if origin.strip()}
+
+    # The deployed app serves its frontend and API from the same host. Accept
+    # that request origin automatically so production hostnames don't need to
+    # be hard-coded; keep the explicit allowlist for local and cross-origin use.
+    request_origin = f"{request.url.scheme}://{request.url.netloc}"
+    origin = request.headers.get("origin", "").rstrip("/")
+    same_origin = bool(origin and origin == request_origin)
+
+    if ((origin not in allowed_origins and not same_origin)
             or request.headers.get("x-pathway-request") != "1"):
         raise HTTPException(status_code=403, detail="Untrusted request origin.")
 
