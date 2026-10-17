@@ -213,3 +213,16 @@ def test_preparation_stages_reach_ai_without_inferring_legacy_year(monkeypatch):
     assert captured[-1]["student_profile"]["transfer_stage"] == ""
     assert normalize_transfer_stage("senior") == ""
     assert normalize_transfer_stage("applying") == "applying"
+
+
+def test_ranking_normalizes_model_tier_case(monkeypatch):
+    from backend.campus_compass import ranking
+    monkeypatch.setattr(ranking, "prioritize_events", lambda *_: [
+        {"id": 0, "tier": "HIGH", "reason": "Relevant transfer workshop."},
+        {"id": 1, "tier": " Medium ", "reason": "Useful campus resource."},
+        {"id": 2, "tier": "unexpected", "reason": "Invalid tier."},
+    ])
+    events = [{"title": str(i), "date": "2026-10-17"} for i in range(3)]
+    ranked = ranking.rank_events({}, events)
+    assert [event["tier"] for event in ranked] == ["high", "medium", "low"]
+    assert all("tier" not in event for event in events)

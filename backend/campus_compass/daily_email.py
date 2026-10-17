@@ -86,7 +86,7 @@ def run_delivery(*, send=False, recipient=None):
                 result["skipped"] += 1
                 continue
             try:
-                mailer.send_email(subscriber["email"], f"Your Pathway campus events · {current_date.isoformat()}", text, html)
+                mailer.send_email(subscriber["email"], f"Your De Anza Guide campus events · {current_date.isoformat()}", text, html)
                 state = "sent"
                 result["sent"] += 1
             except Exception as exc:

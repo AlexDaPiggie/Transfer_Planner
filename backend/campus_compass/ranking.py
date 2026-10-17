@@ -90,11 +90,9 @@ def rank_events(
 
         event = dict(id_lookup[item["id"]])
 
-        event["tier"] = (
-            item.get("tier")
-            if item.get("tier") in VALID_TIERS
-            else "low"
-        )
+        # Providers may return uppercase labels despite the requested format.
+        tier = str(item.get("tier") or "").strip().lower()
+        event["tier"] = tier if tier in VALID_TIERS else "low"
 
         event["reason"] = item.get("reason") or MISSING_REASON
 

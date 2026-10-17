@@ -43,7 +43,6 @@ export function renderServiceHome(app) {
   app.innerHTML = `
     <section class="hero home-hero" aria-labelledby="home-title">
       <h1 id="home-title">Let's make College Easier</h1>
-      <p>Plan your transfer, find campus events, and get answers.</p>
     </section>
     <section class="service-grid" aria-label="De Anza Guide services">
         <article class="card service-card planner-service"><span class="service-card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21V5.5Z"/><path d="M4 6h13M8 10h8m-8 4h6"/></svg></span><span class="service-eyebrow">Transfer Planner</span><p>Build a transfer plan with verified ASSIST courses.</p><a class="primary" href="?service=transfer">Plan your transfer <span aria-hidden="true">→</span></a></article>
