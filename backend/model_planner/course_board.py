@@ -40,6 +40,46 @@ def _text_from_template_assets(payload: dict[str, Any]) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def _choice_groups_from_agreement(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """Read Assist's explicit "complete N following" advisements as alternatives."""
+    groups = []
+    for asset_index, asset in enumerate(_json_list(payload.get("templateAssets", []))):
+        if not isinstance(asset, dict) or asset.get("type") != "RequirementGroup":
+            continue
+        for section_index, section in enumerate(asset.get("sections", []) or []):
+            for advisement_index, advisement in enumerate(section.get("advisements", []) or []):
+                if not isinstance(advisement, dict) or advisement.get("type") != "NFollowing":
+                    continue
+                try:
+                    amount = float(advisement.get("amount", 0))
+                except (TypeError, ValueError):
+                    continue
+                if amount != 1 or str(advisement.get("amountUnitType", "")).casefold() != "course":
+                    continue
+                options = []
+                for row in section.get("rows", []) or []:
+                    cells = []
+                    for cell in row.get("cells", []) or []:
+                        cell_id = str(cell["id"]) if cell.get("id") is not None else None
+                        course = cell.get("course") or {}
+                        series_courses = (cell.get("series") or {}).get("courses") or []
+                        targets = series_courses or ([course] if course else [])
+                        codes = [
+                            f"{target.get('prefix', '').strip()} {target.get('courseNumber', '').strip()}".strip()
+                            for target in targets
+                        ]
+                        if cell_id or any(codes):
+                            cells.append({"id": cell_id, "codes": [code for code in codes if code]})
+                    if cells:
+                        options.append(cells)
+                if options:
+                    groups.append({
+                        "id": f"{asset_index}:{section_index}:{advisement_index}",
+                        "options": options,
+                    })
+    return groups
+
+
 def _category_sections(payload: dict[str, Any]) -> tuple[str, str]:
     """Return the Assist text that describes required and strongly recommended courses."""
     text = _text_from_template_assets(payload)
@@ -103,6 +143,23 @@ def _target_identity(articulation: dict[str, Any]) -> tuple[str, str]:
         target_code = " + ".join(series_codes)
         target_title = target_code
     return target_code or "Required major preparation", target_title or "Required major preparation"
+
+
+def _target_courses(articulation: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return the receiving courses covered by a course or receiving series."""
+    receiving = articulation.get("course") or {}
+    series_courses = (articulation.get("series") or {}).get("courses") or []
+    courses = series_courses or ([receiving] if receiving else [])
+    targets = []
+    for course in courses:
+        course_id = course.get("courseIdentifierParentId")
+        code = f"{course.get('prefix', '').strip()} {course.get('courseNumber', '').strip()}".strip()
+        if code or course_id is not None:
+            targets.append({"id": str(course_id) if course_id is not None else None, "code": code})
+    if not targets:
+        target_code, _ = _target_identity(articulation)
+        targets.append({"id": None, "code": target_code})
+    return targets
 
 
 def _sending_options(articulation: dict[str, Any]) -> tuple[list[dict[str, Any]], str | None]:
@@ -169,7 +226,9 @@ def _requirements_from_agreement(agreement: dict[str, Any]) -> dict[str, dict[st
         requirements[target_code] = {
             "target_code": target_code,
             "target_title": target_title,
+            "target_courses": _target_courses(articulation),
             "target_is_series": bool(articulation.get("series")),
+            "template_cell_id": str(entry.get("templateCellId")) if entry.get("templateCellId") is not None else None,
             "category": category,
             "options": options,
             "no_articulation_reason": no_articulation_reason,
@@ -198,35 +257,101 @@ def _build_university_plans(
     main_source_id: int,
     source_position: dict[int, int],
     source_support: dict[int, int],
+    choice_groups_by_source: dict[tuple[int, int, str], list[dict[str, Any]]],
     requested_year_id: int,
 ) -> list[dict[str, Any]]:
-    """Build one three-category board per selected university and major."""
+    """Build per-university plans, preferring a complete main-college route."""
     plans = []
     for (target_id, major), agreements in by_goal.items():
         agreement_by_source = {item["source_id"]: item for item in agreements}
         first = agreements[0]
-        requirement_keys = set().union(*(
+        requirement_keys = sorted(set().union(*(
             parsed[(item["source_id"], item["target_id"], item["major"])].keys()
             for item in agreements
-        ))
-        requirements = {}
+        )), key=str.casefold)
 
-        for requirement_key in requirement_keys:
+        # Assist's NFollowing advisement says to complete one displayed row (a
+        # row can itself contain a course series), not every row in the section.
+        reference_source = main_source_id if choice_groups_by_source.get((main_source_id, target_id, major)) else next((
+            source_id for source_id in source_ids
+            if choice_groups_by_source.get((source_id, target_id, major))
+        ), None)
+        reference_groups = choice_groups_by_source.get((reference_source, target_id, major), []) if reference_source is not None else []
+        choice_cell_ids = {
+            cell["id"]
+            for source_id in source_ids
+            for choice_group in choice_groups_by_source.get((source_id, target_id, major), [])
+            for option_row in choice_group["options"]
+            for cell in option_row
+            if cell.get("id")
+        }
+
+        # Assist may represent the same receiving series as one row at one college
+        # and several rows at another. Normalize course identifiers first, then
+        # connect rows whose receiving-course sets overlap.
+        id_by_code: dict[str, str] = {}
+        for source_id in source_ids:
+            for definition in parsed.get((source_id, target_id, major), {}).values():
+                for course in definition.get("target_courses", []):
+                    if course.get("id") and course.get("code"):
+                        code = re.sub(r"\s+", " ", course["code"]).upper()
+                        id_by_code.setdefault(code, course["id"])
+
+        records = []
+        for key in requirement_keys:
             per_source = {
-                source_id: parsed.get((source_id, target_id, major), {}).get(requirement_key, {})
+                source_id: parsed.get((source_id, target_id, major), {}).get(key, {})
                 for source_id in source_ids
             }
-            definition = next((entry for entry in per_source.values() if entry), {})
-            category = definition.get("category", "other")
-            articulated = any(entry.get("options") for entry in per_source.values())
-            requirements[requirement_key] = {
-                "key": requirement_key,
+            definitions = [value for value in per_source.values() if value]
+            if not definitions:
+                continue
+            if any(definition.get("template_cell_id") in choice_cell_ids for definition in definitions):
+                continue
+            tokens = set()
+            target_codes = []
+            target_pairs = []
+            for definition in definitions:
+                for course in definition.get("target_courses", []):
+                    code = course.get("code", "").strip()
+                    normalized = re.sub(r"\s+", " ", code).upper()
+                    token = f"id:{course['id']}" if course.get("id") else f"id:{id_by_code[normalized]}" if normalized in id_by_code else f"code:{normalized}"
+                    if normalized:
+                        tokens.add(token)
+                        target_pairs.append((code, token))
+                        if code not in target_codes:
+                            target_codes.append(code)
+            if not tokens:
+                tokens.add(f"label:{key.upper()}")
+                target_codes.append(key)
+                target_pairs.append((key, f"label:{key.upper()}"))
+            records.append({
+                "key": key,
                 "per_source": per_source,
-                "definition": definition,
-                "category": category,
-                "articulated": articulated,
-            }
+                "definitions": definitions,
+                "tokens": tokens,
+                "target_codes": target_codes,
+                "target_pairs": list(dict.fromkeys(target_pairs)),
+            })
 
+        # Form connected requirement groups only when Assist rows share an actual
+        # receiving course. This catches one-series-vs-split-row representations
+        # without grouping unrelated courses that merely share a department.
+        clusters: list[dict[str, Any]] = []
+        for record in records:
+            matching = [cluster for cluster in clusters if cluster["tokens"] & record["tokens"]]
+            if not matching:
+                clusters.append({"records": [record], "tokens": set(record["tokens"])})
+                continue
+            primary = matching[0]
+            primary["records"].append(record)
+            primary["tokens"].update(record["tokens"])
+            for extra in matching[1:]:
+                primary["records"].extend(extra["records"])
+                primary["tokens"].update(extra["tokens"])
+                clusters.remove(extra)
+
+        label = f"{first['target_name']} — {major}"
         university = {
             "target_id": target_id,
             "university": first["target_name"],
@@ -237,70 +362,208 @@ def _build_university_plans(
             "not_articulated": [],
         }
 
-        for key, item in requirements.items():
-            definition = item["definition"]
-            label = f"{first['target_name']} — {major}"
-            if item["category"] == "other":
+        for choice_group in reference_groups:
+            options_by_source = {}
+            for source_id in source_ids:
+                definitions = parsed.get((source_id, target_id, major), {})
+                keys_by_cell = {
+                    definition.get("template_cell_id"): key
+                    for key, definition in definitions.items()
+                    if definition.get("template_cell_id")
+                }
+                keys_by_codes = {
+                    frozenset(re.sub(r"\s+", " ", course.get("code", "")).upper() for course in definition.get("target_courses", []) if course.get("code")): definition
+                    for definition in definitions.values()
+                    if any(course.get("code") for course in definition.get("target_courses", []))
+                }
+                supported_rows = []
+                for row_cells in choice_group["options"]:
+                    row_defs = []
+                    for cell in row_cells:
+                        definition = definitions.get(keys_by_cell.get(cell.get("id"))) if cell.get("id") else None
+                        if definition is None and cell.get("codes"):
+                            code_set = frozenset(re.sub(r"\s+", " ", code).upper() for code in cell["codes"])
+                            definition = keys_by_codes.get(code_set)
+                        if definition is not None:
+                            row_defs.append(definition)
+                    if len(row_defs) == len(row_cells) and all(item.get("options") for item in row_defs):
+                        supported_rows.append((row_cells, row_defs))
+                options_by_source[source_id] = supported_rows
+
+            supported_sources = [source_id for source_id in source_ids if options_by_source[source_id]]
+            if main_source_id in supported_sources:
+                selected_source = main_source_id
+            elif supported_sources:
+                selected_source = max(supported_sources, key=lambda source_id: (len(options_by_source[source_id]), source_support[source_id], -source_position[source_id]))
+            else:
                 continue
-            if not item["articulated"]:
+
+            choices = []
+            choice_definitions = []
+            for row_cells, row_defs in options_by_source[selected_source]:
+                row_target_codes = []
+                for definition in row_defs:
+                    choice_definitions.append(definition)
+                    codes = [course["code"] for course in definition.get("target_courses", []) if course.get("code")]
+                    row_target_codes.extend(codes or [definition["target_code"]])
+                row_combinations = [{"groups": [], "courses": [], "conjunction": "and", "is_series": False}]
+                for definition in row_defs:
+                    expanded = []
+                    for combination in row_combinations:
+                        for option in definition["options"]:
+                            expanded.append({
+                                "groups": combination["groups"] + [{"courses": option["courses"], "conjunction": option.get("conjunction", "and")}],
+                                "courses": combination["courses"] + option["courses"],
+                                "conjunction": "and",
+                                "is_series": len(combination["courses"] + option["courses"]) > 1,
+                            })
+                    row_combinations = expanded[:32]
+                row_combinations = [{
+                    **combination,
+                    "label": f"Option {index + 1} of {len(row_combinations)}",
+                } for index, combination in enumerate(row_combinations)]
+                choices.append({
+                    "target_course": " + ".join(dict.fromkeys(row_target_codes)),
+                    "options": row_combinations,
+                })
+
+            if not choices:
+                continue
+            category = "required" if any(item["category"] == "required" for item in choice_definitions) else "recommended"
+            selected_agreement = agreement_by_source[selected_source]
+            target_course = " OR ".join(choice["target_course"] for choice in choices)
+            fallback_note = None
+            if selected_source != main_source_id:
+                fallback_note = (
+                    f"{agreement_by_source.get(main_source_id, {}).get('source_name', 'Your main college')} "
+                    "does not articulate an available choice in this requirement group. "
+                    f"Choose one complete option at {selected_agreement['source_name']} instead."
+                )
+            university[category].append({
+                "target_course": target_course,
+                "target_title": target_course,
+                "source_id": selected_source,
+                "source_name": selected_agreement["source_name"],
+                "is_main_college": selected_source == main_source_id,
+                "choices": choices,
+                # The first Assist course choice is the initial selection.
+                "options": choices[0]["options"],
+                "selection_note": "Complete 1 course or combination from the following; choose one option.",
+                "fallback_note": fallback_note,
+                "policy_note": "Regular and honors courses may be combined to complete this series." if any(item.get("honors_combination_allowed") for item in choice_definitions) else None,
+                "assist_url": _build_assist_url(selected_agreement.get("year_id", requested_year_id), selected_source, target_id, selected_agreement["document_key"]),
+            })
+
+        for cluster in clusters:
+            group_records = cluster["records"]
+            group_tokens = cluster["tokens"]
+            definitions = [definition for record in group_records for definition in record["definitions"]]
+            category = "required" if any(item["category"] == "required" for item in definitions) else "recommended" if any(item["category"] == "recommended" for item in definitions) else "other"
+
+            available_by_source: dict[int, list[dict[str, Any]]] = {}
+            covered_by_source: dict[int, set[str]] = {}
+            for source_id in source_ids:
+                available = []
+                covered = set()
+                for record in group_records:
+                    source_definition = record["per_source"].get(source_id, {})
+                    if source_definition.get("options"):
+                        available.append((record, source_definition))
+                        covered.update(record["tokens"])
+                available_by_source[source_id] = available
+                covered_by_source[source_id] = covered
+
+            complete_sources = [source_id for source_id in source_ids if group_tokens <= covered_by_source[source_id]]
+            if category == "other" and complete_sources:
+                continue
+            if main_source_id in complete_sources:
+                selected_source = main_source_id
+            elif complete_sources:
+                selected_source = max(complete_sources, key=lambda source_id: (source_support[source_id], -source_position[source_id]))
+            else:
+                main_missing = [code for record in group_records for code, token in record["target_pairs"] if token not in covered_by_source[main_source_id]]
+                missing_label = ", ".join(dict.fromkeys(main_missing)) or ", ".join(dict.fromkeys(
+                    code for record in group_records for code in record["target_codes"]
+                ))
+                no_options_anywhere = not any(available_by_source.values())
+                assist_reason = next((definition.get("no_articulation_reason") for definition in definitions if definition.get("no_articulation_reason")), None)
                 university["not_articulated"].append({
-                    "target_course": definition.get("target_code") or key,
-                    "target_title": definition.get("target_title") or definition.get("target_code") or key,
-                    "reason": definition.get("no_articulation_reason") or "No selected community college has an articulated course for this university requirement.",
+                    "target_course": missing_label,
+                    "target_title": missing_label,
+                    "reason": assist_reason if no_options_anywhere and assist_reason else f"No selected college offers a complete articulated route for this requirement group. The main college is missing: {missing_label}.",
                     "goal_label": label,
                 })
                 continue
 
-            candidates = [source_id for source_id in source_ids if item["per_source"].get(source_id, {}).get("options")]
-            if not candidates:
-                university["not_articulated"].append({
-                    "target_course": definition.get("target_code") or key,
-                    "target_title": definition.get("target_title") or definition.get("target_code") or key,
-                    "reason": "No selected community college has an articulated course for this university requirement.",
-                    "goal_label": label,
-                })
-                continue
-            selected_source = main_source_id if main_source_id in candidates else max(
-                candidates,
-                key=lambda source_id: (source_support[source_id], -source_position[source_id]),
-            )
+            # Select the smallest set of this college's articulated rows that covers
+            # the complete receiving group; a single series row wins over duplicates.
+            remaining = set(group_tokens)
+            cover = []
+            candidates = list(available_by_source[selected_source])
+            while remaining and candidates:
+                best = max(candidates, key=lambda pair: (len(pair[0]["tokens"] & remaining), -len(pair[0]["tokens"]), pair[0]["key"]))
+                contribution = best[0]["tokens"] & remaining
+                if not contribution:
+                    break
+                cover.append(best)
+                remaining.difference_update(contribution)
+                candidates.remove(best)
+
             selected_agreement = agreement_by_source.get(selected_source)
-            if not selected_agreement:
+            if not selected_agreement or remaining:
                 continue
-            options = []
-            for option_index, option in enumerate(item["per_source"][selected_source].get("options", [])):
-                options.append({
-                    "courses": option["courses"],
-                    "conjunction": option.get("conjunction", "and"),
-                    "is_series": option["is_series"],
-                    "label": f"Option {option_index + 1} of {len(item['per_source'][selected_source]['options'])}",
-                })
+
+            # Each selected Assist row may itself have OR alternatives. Combine rows
+            # with AND while preserving each row's own conjunction for display.
+            combinations = [{"groups": [], "courses": [], "conjunction": "and", "is_series": False}]
+            for _, source_definition in cover:
+                expanded = []
+                for combination in combinations:
+                    for option in source_definition["options"]:
+                        expanded.append({
+                            "groups": combination["groups"] + [{"courses": option["courses"], "conjunction": option.get("conjunction", "and")}],
+                            "courses": combination["courses"] + option["courses"],
+                            "conjunction": "and",
+                            "is_series": len(combination["courses"] + option["courses"]) > 1,
+                        })
+                        if len(expanded) >= 32:
+                            break
+                    if len(expanded) >= 32:
+                        break
+                combinations = expanded
+
+            options = [{
+                **option,
+                "label": f"Option {index + 1} of {len(combinations)}" if len(combinations) > 1 else "Option 1 of 1",
+            } for index, option in enumerate(combinations)]
+            selected_codes = list(dict.fromkeys(code for record, _ in cover for code in record["target_codes"]))
+            target_course = ", ".join(selected_codes) or group_records[0]["key"]
             fallback_note = None
-            if selected_source != main_source_id and not item["per_source"].get(main_source_id, {}).get("options") and (
-                definition.get("target_is_series") or any(option["is_series"] for option in options)
-            ):
-                fallback_note = (
-                    f"{agreement_by_source.get(main_source_id, {}).get('source_name', 'Your main college')} does not "
-                    f"articulate {definition.get('target_code', key)} as a complete series required by "
-                    f"{first['target_name']} — {major}. Take the full course group at {selected_agreement['source_name']} instead."
-                )
+            if selected_source != main_source_id:
+                missing_at_main = [code for record in group_records for code, token in record["target_pairs"] if token not in covered_by_source[main_source_id]]
+                if missing_at_main:
+                    fallback_note = (
+                        f"{agreement_by_source.get(main_source_id, {}).get('source_name', 'Your main college')} does not "
+                        f"articulate {', '.join(dict.fromkeys(missing_at_main))} in this requirement group. "
+                        f"Take the complete group at {selected_agreement['source_name']} instead."
+                    )
             group = {
-                "target_course": definition.get("target_code") or key,
-                "target_title": definition.get("target_title") or definition.get("target_code") or key,
+                "target_course": target_course,
+                "target_title": target_course,
                 "source_id": selected_source,
                 "source_name": selected_agreement["source_name"],
                 "is_main_college": selected_source == main_source_id,
                 "options": options,
                 "fallback_note": fallback_note,
-                "policy_note": "Regular and honors courses may be combined to complete this series." if definition.get("honors_combination_allowed") else None,
+                "policy_note": "Regular and honors courses may be combined to complete this series." if any(item.get("honors_combination_allowed") for item in definitions) else None,
                 "assist_url": _build_assist_url(selected_agreement.get("year_id", requested_year_id), selected_source, target_id, selected_agreement["document_key"]),
             }
             if not university["assist_url"]:
                 university["assist_url"] = group["assist_url"]
-            university[item["category"]].append(group)
+            university[category].append(group)
 
-        for category in ("required", "recommended", "not_articulated"):
-            university[category].sort(key=lambda group: group["target_course"].casefold())
+        for key in ("required", "recommended", "not_articulated"):
+            university[key].sort(key=lambda group: group["target_course"].casefold())
         plans.append(university)
     return plans
 
@@ -313,13 +576,14 @@ def build_course_board(
 ) -> dict[str, Any]:
     """Return Required/Recommended CC course cards and actionable articulation footnotes."""
     source_position = {source_id: index for index, source_id in enumerate(source_ids)}
-    source_names = {item["source_id"]: item["source_name"] for item in agreements}
     by_goal: dict[tuple[int, str], list[dict[str, Any]]] = defaultdict(list)
     parsed: dict[tuple[int, int, str], dict[str, dict[str, Any]]] = {}
+    choice_groups_by_source: dict[tuple[int, int, str], list[dict[str, Any]]] = {}
     for agreement in agreements:
         goal_key = (agreement["target_id"], agreement["major"])
         by_goal[goal_key].append(agreement)
         parsed[(agreement["source_id"], agreement["target_id"], agreement["major"])] = _requirements_from_agreement(agreement)
+        choice_groups_by_source[(agreement["source_id"], agreement["target_id"], agreement["major"])] = _choice_groups_from_agreement(agreement["payload"])
 
     goal_labels = []
     for target_id, major in by_goal:
@@ -338,103 +602,10 @@ def build_course_board(
             requirement_map = parsed.get((source_id, goal_key[0], goal_key[1]), {})
             source_support[source_id] += sum(bool(_choose_option(requirement_map.get(key, {}).get("options", []))) for key in requirement_keys)
 
-    # Course-stage cards deliberately keep ``BIOL 6A or BIOL 6AH`` together,
-    # without turning an entire multi-course series into one oversized card.
+    # The combined board is built from the same selected paths as the university panels.
     cards: dict[tuple[int, str, str], dict[str, Any]] = {}
     not_articulated_cards: dict[tuple[int, str], dict[str, Any]] = {}
     footnotes: list[str] = []
-    for (target_id, major), goal_agreements in by_goal.items():
-        first_agreement = goal_agreements[0]
-        goal_key = f"{target_id}::{major}"
-        requirement_keys = set().union(*(
-            parsed[(item["source_id"], item["target_id"], item["major"])].keys()
-            for item in goal_agreements
-        ))
-        requirement_data: dict[str, dict[str, Any]] = {}
-        for requirement_key in requirement_keys:
-            per_source = {
-                item["source_id"]: parsed[(item["source_id"], item["target_id"], item["major"])].get(requirement_key, {})
-                for item in goal_agreements
-            }
-            definition = next((item for item in per_source.values() if item), {})
-            category = definition.get("category", "other")
-            has_articulated_option = any(
-                _choose_option(item.get("options", []))
-                for item in per_source.values()
-                if item
-            )
-            if not has_articulated_option:
-                unavailable_key = (target_id, definition.get("target_code", requirement_key))
-                unavailable = not_articulated_cards.setdefault(unavailable_key, {
-                    "course_code": definition.get("target_code") or "Required major preparation",
-                    "course_name": definition.get("target_title") or definition.get("target_code") or "Required major preparation",
-                    "reason": definition.get("no_articulation_reason") or "No selected community college has an articulated course for this university requirement.",
-                    "goals": {},
-                })
-                unavailable["goals"][goal_key] = {
-                    "label": f"{first_agreement['target_name']} — {major}",
-                    "dot_index": goal_indexes[goal_key],
-                }
-            if category == "other":
-                continue
-            requirement_data[requirement_key] = {
-                "per_source": per_source,
-                "definition": definition,
-                "category": category,
-            }
-
-        selected_by_requirement: dict[str, tuple[int, list[dict[str, Any]]]] = {}
-        fallback_notes: dict[str, str] = {}
-        for requirement_key, item_data in requirement_data.items():
-            per_source = item_data["per_source"]
-            definition = item_data["definition"]
-            category = item_data["category"]
-
-            candidates = []
-            for source_id in source_ids:
-                options = per_source.get(source_id, {}).get("options", [])
-                if options:
-                    candidates.append((source_id, options))
-            selected = selected_by_requirement.get(requirement_key)
-            if not selected:
-                main_candidate = next((candidate for candidate in candidates if candidate[0] == main_source_id), None)
-                selected = main_candidate or (max(candidates, key=lambda candidate: (source_support[candidate[0]], -source_position[candidate[0]])) if candidates else None)
-
-            if not selected:
-                continue
-
-            source_id, selected_options = selected
-            agreement = next(item for item in goal_agreements if item["source_id"] == source_id)
-            # Assist lists alternatives for the same receiving requirement as separate
-            # options. The pathway is a concrete course plan, so include only the first
-            # option here; the university board retains the option switcher.
-            for option in selected_options[:1]:
-                for course in option["courses"]:
-                    family, stage, is_honors = _course_stage_key(course)
-                    card_key = (source_id, family, stage)
-                    card = cards.setdefault(card_key, {
-                        "source_id": source_id,
-                        "source_name": source_names.get(source_id, f"Community college #{source_id}"),
-                        "variants": {},
-                        "is_main_college": source_id == main_source_id,
-                        "goals": {},
-                        "assist_urls": set(),
-                        "category": category,
-                        "fallback_notes": set(),
-                        "policy_notes": set(),
-                    })
-                    variant_key = "honors" if is_honors else "regular"
-                    card["variants"].setdefault(variant_key, course)
-                    if category == "required":
-                        card["category"] = "required"
-                    previous_role = card["goals"].get(goal_key, {}).get("category")
-                    card["goals"][goal_key] = {"label": f"{agreement['target_name']} — {major}", "dot_index": goal_indexes[goal_key], "category": "required" if previous_role == "required" else category}
-                    card["assist_urls"].add(_build_assist_url(agreement.get("year_id", requested_year_id), source_id, target_id, agreement["document_key"]))
-                    if requirement_key in fallback_notes:
-                        card["fallback_notes"].add(fallback_notes[requirement_key])
-                    if definition.get("honors_combination_allowed"):
-                        card["policy_notes"].add("Regular and honors courses may be combined to complete this series.")
-
     university_plans = _build_university_plans(
         by_goal=by_goal,
         parsed=parsed,
@@ -442,8 +613,56 @@ def build_course_board(
         main_source_id=main_source_id,
         source_position=source_position,
         source_support=source_support,
+        choice_groups_by_source=choice_groups_by_source,
         requested_year_id=requested_year_id,
     )
+
+    # The combined board and model context come directly from the selected university paths.
+    for university in university_plans:
+        target_id = university["target_id"]
+        major = university["major"]
+        goal_key = f"{target_id}::{major}"
+        goal_label = f"{university['university']} — {major}"
+        dot_index = goal_indexes[goal_key]
+        for category in ("required", "recommended"):
+            for group in university[category]:
+                for course in (group.get("options") or [{}])[0].get("courses", []):
+                    family, stage, is_honors = _course_stage_key(course)
+                    card_key = (group["source_id"], family, stage)
+                    card = cards.setdefault(card_key, {
+                        "source_id": group["source_id"],
+                        "source_name": group["source_name"],
+                        "variants": {},
+                        "is_main_college": group["is_main_college"],
+                        "goals": {},
+                        "assist_urls": set(),
+                        "category": category,
+                        "fallback_notes": set(),
+                        "policy_notes": set(),
+                    })
+                    card["variants"].setdefault("honors" if is_honors else "regular", course)
+                    if category == "required":
+                        card["category"] = "required"
+                    previous_role = card["goals"].get(goal_key, {}).get("category")
+                    card["goals"][goal_key] = {
+                        "label": goal_label,
+                        "dot_index": dot_index,
+                        "category": "required" if previous_role == "required" else category,
+                    }
+                    card["assist_urls"].add(group["assist_url"])
+                    if group.get("fallback_note"):
+                        card["fallback_notes"].add(group["fallback_note"])
+                    if group.get("policy_note"):
+                        card["policy_notes"].add(group["policy_note"])
+        for group in university["not_articulated"]:
+            unavailable_key = (target_id, group["target_course"])
+            unavailable = not_articulated_cards.setdefault(unavailable_key, {
+                "course_code": group["target_course"],
+                "course_name": group["target_title"],
+                "reason": group["reason"],
+                "goals": {},
+            })
+            unavailable["goals"][goal_key] = {"label": goal_label, "dot_index": dot_index}
 
     required_cards, recommended_cards = [], []
     for card in cards.values():

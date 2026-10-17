@@ -47,7 +47,7 @@ function refreshThemeButton() {
 }
 
 function pageTemplate(content) {
-  app.innerHTML = `<div class="hero"><h1>Let's make transfer easier</h1><p>Add the community colleges you can attend and the university programs you want to keep open. Pathway uses saved Assist agreements to build your plan.</p></div>${content}`;
+  app.innerHTML = `<div class="hero"><h1>Let's make transfer easier</h1><p>Add the Community Colleges you can attend and universities you want to transfer, Pathway will help you to plan out all the courses you could take.</p></div>${content}`;
 }
 
 function options(items) {
@@ -152,7 +152,7 @@ function renderGoals() {
       const schoolGoals = plannerState.goals.map((goal, index) => ({ ...goal, index })).filter((goal) => goal.target_id === targetId);
       return `<div class="goal-school"><div class="goal-school-heading"><strong style="--school-color:${schoolColor(schoolGoals[0].target_name)}">${escapeHtml(schoolGoals[0].target_name)}</strong></div>${schoolGoals.map((goal) => `<div class="selection-chip goal-chip"><span>${escapeHtml(goal.major)}</span><span class="goal-type-badge ${goal.goal_type}">${goal.goal_type === "primary" ? "Primary major" : "Alternate major"}</span><button class="chip-remove" type="button" data-remove-goal="${goal.index}" aria-label="Remove ${escapeHtml(goal.major)}">×</button></div>`).join("")}</div>`;
     }).join("")
-    : `<p class="selection-hint">Add one or more university-major goals.</p>`;
+    : `<p class="selection-hint">Add one or more university and the major.</p>`;
   area.querySelectorAll("[data-remove-goal]").forEach((button) => {
     button.addEventListener("click", () => {
       plannerState.goals.splice(Number(button.dataset.removeGoal), 1);
@@ -277,9 +277,46 @@ function addGoal() {
 function showPlan(plan, session) {
   const results = document.querySelector("#results");
   results.innerHTML = `${renderPlan(plan)}<section class="card plan-chat" aria-label="Ask a question about your plan"><form class="plan-chat-form" id="chat-form"><label class="visually-hidden" for="message">Ask a question about your transfer plan</label><textarea id="message" rows="1" placeholder="Ask about courses, articulation, or policies in your plan…" required></textarea><button class="chat-submit" id="chat-submit" type="button" aria-label="Send question"><span aria-hidden="true">›</span></button></form><div class="chat-toolbar"><button class="chat-text-button" id="toggle-answers" type="button" aria-controls="answer-panel" aria-expanded="true" hidden>Show answers</button><button class="chat-text-button" id="clear-chat" type="button" disabled>Clear</button></div><section class="answer-panel" id="answer-panel" aria-label="Questions and answers" aria-live="polite" hidden><div class="messages" id="messages"></div></section></section>`;
+  const activateChoice = (choiceSetId, choiceIndex) => {
+    const choiceSet = results.querySelector(`[data-choice-set-id="${choiceSetId}"]`);
+    if (!choiceSet) return;
+    choiceSet.dataset.activeChoice = String(choiceIndex);
+    choiceSet.querySelectorAll("[data-choice-activate]").forEach((button) => {
+      const selected = Number(button.dataset.choiceIndex) === choiceIndex;
+      button.setAttribute("aria-pressed", String(selected));
+      button.textContent = selected ? "Selected" : "Use this choice";
+    });
+    choiceSet.querySelectorAll(".course-choice-card").forEach((card) => {
+      card.classList.toggle("is-active-choice", Number(card.dataset.choiceIndex) === choiceIndex);
+    });
+  };
+  const refreshCombinedBoard = () => {
+    const combinedBoard = results.querySelector("#combined-course-board");
+    const board = plan.plan?.course_board;
+    if (combinedBoard && board) combinedBoard.innerHTML = renderCombinedCourseBoard(board, true);
+  };
   results.onclick = (event) => {
+    const toggle = event.target.closest("[data-choice-toggle]");
+    if (toggle) {
+      const choiceSet = results.querySelector(`[data-choice-set-id="${toggle.dataset.choiceToggle}"]`);
+      if (!choiceSet) return;
+      const expanded = toggle.getAttribute("aria-expanded") !== "true";
+      toggle.setAttribute("aria-expanded", String(expanded));
+      toggle.textContent = expanded ? "Hide other course options" : "See other course options";
+      choiceSet.querySelectorAll(".course-choice-card").forEach((card) => {
+        card.hidden = !expanded && Number(card.dataset.choiceIndex) !== Number(choiceSet.dataset.activeChoice || 0);
+      });
+      return;
+    }
+    const selectChoice = event.target.closest("[data-choice-activate]");
+    if (selectChoice) {
+      activateChoice(selectChoice.dataset.choiceActivate, Number(selectChoice.dataset.choiceIndex));
+      refreshCombinedBoard();
+      return;
+    }
     const button = event.target.closest("[data-option-switch]");
     if (!button) return;
+    if (button.dataset.choiceSetId) activateChoice(button.dataset.choiceSetId, Number(button.dataset.choiceIndex));
     const optionCount = Number(button.dataset.optionCount);
     const nextOption = (Number(button.dataset.optionCurrent) + 1) % optionCount;
     const groupId = button.dataset.optionSwitch;
@@ -294,12 +331,8 @@ function showPlan(plan, session) {
     }
     button.dataset.optionCurrent = String(nextOption);
     button.innerHTML = `Option ${nextOption + 1} of ${optionCount} <span aria-hidden="true">›</span>`;
-    const combinedBoard = results.querySelector("#combined-course-board");
-    const board = plan.plan?.course_board;
-    if (combinedBoard && board) {
-      combinedBoard.innerHTML = renderCombinedCourseBoard(board, true);
-      mountCompletedCourses(plan);
-    }
+    refreshCombinedBoard();
+    mountCompletedCourses(plan);
   };
   wirePlanChat(session, plan);
   mountCompletedCourses(plan);
@@ -459,7 +492,7 @@ async function chat(event, session, plan) {
 }
 
 async function renderPlanner() {
-  pageTemplate(`<section class="planner-card card"><h2>1. Community colleges</h2><p>Add every California community college where you could take courses. Choose a suggestion to add it to your list.</p><div class="college-picker"><div class="search-add-row"><input id="college-search" placeholder="Type a college name" autocomplete="off" aria-controls="college-suggestions" aria-autocomplete="list" disabled></div><div id="college-suggestions" class="college-suggestions" role="listbox" hidden></div></div><p class="field-message" id="college-message"></p><div class="selection-list" id="college-choices"></div><p class="main-college-note">Select a main college below. When equally useful courses are available at several colleges, it is prioritized.</p></section><section class="planner-card card"><h2>2. University transfer goals</h2><p>Choose a university, then choose a major and mark it as primary or alternate.</p><div class="college-picker"><div class="search-add-row"><input id="university-search" placeholder="Add a community college first" autocomplete="off" aria-controls="university-suggestions" aria-autocomplete="list" disabled></div><div id="university-suggestions" class="college-suggestions" role="listbox" hidden></div></div><datalist id="university-options"></datalist><div class="field"><label for="major-search">Major</label><input id="major-search" list="major-options" placeholder="Choose a university first" autocomplete="off" disabled><datalist id="major-options"></datalist></div><div id="goal-type-picker" class="goal-type-picker" hidden><span>This major is:</span><label><input type="radio" name="goal-type" value="primary" checked> Primary</label><label><input type="radio" name="goal-type" value="alternate"> Alternate</label><button class="primary add-major-button" type="button" id="add-major">Add major</button></div><div class="selection-list" id="goals"></div></section><section class="card plan-action"><h2>3. See your plan</h2><p>Pathway ranks verified courses that keep the most transfer options open, giving your main college priority when the options are tied.</p><button class="primary" id="generate" disabled>View plan</button></section><section id="results"></section>`);
+  pageTemplate(`<section class="planner-card card"><h2>1. Community colleges</h2><p>Add community colleges that you can attend.</p><div class="college-picker"><div class="search-add-row"><input id="college-search" placeholder="Type a college name" autocomplete="off" aria-controls="college-suggestions" aria-autocomplete="list" disabled></div><div id="college-suggestions" class="college-suggestions" role="listbox" hidden></div></div><p class="field-message" id="college-message"></p><div class="selection-list" id="college-choices"></div><p class="main-college-note">Courses will be prioritized to be taken at the main college.</p></section><section class="planner-card card"><h2>2. University transfer goals</h2><p>Choose a university, then choose a major and mark it as primary or alternate.</p><div class="college-picker"><div class="search-add-row"><input id="university-search" placeholder="Add a community college first" autocomplete="off" aria-controls="university-suggestions" aria-autocomplete="list" disabled></div><div id="university-suggestions" class="college-suggestions" role="listbox" hidden></div></div><datalist id="university-options"></datalist><div class="field"><label for="major-search">Major</label><input id="major-search" list="major-options" placeholder="Choose a university first" autocomplete="off" disabled><datalist id="major-options"></datalist></div><div id="goal-type-picker" class="goal-type-picker" hidden><span>This major is:</span><label><input type="radio" name="goal-type" value="primary" checked> Primary</label><label><input type="radio" name="goal-type" value="alternate"> Alternate</label><button class="primary add-major-button" type="button" id="add-major">Add major</button></div><div class="selection-list" id="goals"></div></section><section class="card plan-action"><h2>3. See your plan</h2><p>Click "View plan" and wait a few seconds for the courses table to be created.</p><button class="primary" id="generate" disabled>View plan</button></section><section id="results"></section>`);
   renderCollegeChoices();
   renderGoals();
   const collegeInput = document.querySelector("#college-search");

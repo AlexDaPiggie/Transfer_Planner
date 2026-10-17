@@ -107,6 +107,17 @@
 .equivalency-group-heading { display: flex; justify-content: space-between; align-items: center; gap: 6px; min-height: 29px; }
 .equivalency-option[hidden] { display: none !important; }
 .equivalency-group-college { color: var(--muted); font-size: .74rem; font-weight: 800; }
+.equivalency-selection-note { margin: 0; color: var(--muted); font-size: .78rem; line-height: 1.4; }
+.equivalency-selection-row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; }
+.choice-options-toggle, .course-choice-select { padding: 5px 8px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); color: var(--primary); font: inherit; font-size: .72rem; font-weight: 800; cursor: pointer; }
+.choice-options-toggle:hover, .course-choice-select:hover { background: var(--primary-soft); }
+.choice-options-toggle:focus-visible, .course-choice-select:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 30%, transparent); outline-offset: 2px; }
+.course-choice-list { display: grid; gap: 8px; }
+.course-choice-card[hidden] { display: none !important; }
+.course-choice-card { display: grid; gap: 8px; padding: 9px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); }
+.course-choice-card.is-active-choice { border-color: color-mix(in srgb, var(--primary) 65%, var(--border)); }
+.course-choice-heading, .course-choice-actions { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 6px; }
+.course-choice-heading > strong { font-size: .82rem; }
 .equivalency-option { display: grid; gap: 6px; }
 .equivalency-option[hidden] { display: none !important; }
 .equivalency-conjunction { justify-self: center; color: var(--muted); font-size: .72rem; font-weight: 800; text-transform: uppercase; }
