@@ -40,7 +40,8 @@ class ResetPassword(BaseModel):
 def _require_origin(request: Request) -> None:
     """Block CSRF on cookie-authenticated POST endpoints (including sign-in)."""
     origins = os.getenv(
-        "PATHWAY_ALLOWED_ORIGINS", "http://localhost:8080,http://127.0.0.1:8080"
+        "PATHWAY_ALLOWED_ORIGINS",
+        "http://localhost:8080,http://127.0.0.1:8080,http://localhost:8081,http://127.0.0.1:8081",
     ).split(",")
     if (request.headers.get("origin") not in [x.strip() for x in origins]
             or request.headers.get("x-pathway-request") != "1"):

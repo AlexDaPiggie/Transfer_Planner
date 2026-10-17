@@ -93,7 +93,10 @@ function drawUniversityCompletions() {
       if (picker) picker.disabled = !user || !ready || saving || isDone;
     }
     for (const group of university.querySelectorAll(".equivalency-group:not(.not-articulated-group)")) {
-      const isDone = [...group.querySelectorAll('.equivalency-option')].some(option => {
+      const isDone = [...group.querySelectorAll('.equivalency-option')].filter(option => {
+        const choiceCard = option.closest('.course-choice-card');
+        return !option.hidden && !choiceCard?.hidden;
+      }).some(option => {
         const rows = [...option.querySelectorAll('.equivalency-course')];
         return rows.length > 0 && (option.dataset.courseConjunction === 'or'
           ? rows.some(row => row.classList.contains('is-completed-course'))

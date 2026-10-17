@@ -23,7 +23,9 @@ from starlette.middleware.sessions import SessionMiddleware
 import os
 import secrets
 from backend.model_planner.auth import router as auth_router
-load_dotenv(".env.local", override=True)
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+load_dotenv(PROJECT_ROOT / ".env")
+load_dotenv(PROJECT_ROOT / ".env.local", override=True)
 
 
 @asynccontextmanager

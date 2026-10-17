@@ -281,13 +281,10 @@ function showPlan(plan, session) {
     const choiceSet = results.querySelector(`[data-choice-set-id="${choiceSetId}"]`);
     if (!choiceSet) return;
     choiceSet.dataset.activeChoice = String(choiceIndex);
-    choiceSet.querySelectorAll("[data-choice-activate]").forEach((button) => {
-      const selected = Number(button.dataset.choiceIndex) === choiceIndex;
-      button.setAttribute("aria-pressed", String(selected));
-      button.textContent = selected ? "Selected" : "Use this choice";
-    });
     choiceSet.querySelectorAll(".course-choice-card").forEach((card) => {
-      card.classList.toggle("is-active-choice", Number(card.dataset.choiceIndex) === choiceIndex);
+      const selected = Number(card.dataset.choiceIndex) === choiceIndex;
+      card.classList.toggle("is-active-choice", selected);
+      card.hidden = !selected;
     });
   };
   const refreshCombinedBoard = () => {
@@ -296,22 +293,15 @@ function showPlan(plan, session) {
     if (combinedBoard && board) combinedBoard.innerHTML = renderCombinedCourseBoard(board, true);
   };
   results.onclick = (event) => {
-    const toggle = event.target.closest("[data-choice-toggle]");
-    if (toggle) {
-      const choiceSet = results.querySelector(`[data-choice-set-id="${toggle.dataset.choiceToggle}"]`);
-      if (!choiceSet) return;
-      const expanded = toggle.getAttribute("aria-expanded") !== "true";
-      toggle.setAttribute("aria-expanded", String(expanded));
-      toggle.textContent = expanded ? "Hide other course options" : "See other course options";
-      choiceSet.querySelectorAll(".course-choice-card").forEach((card) => {
-        card.hidden = !expanded && Number(card.dataset.choiceIndex) !== Number(choiceSet.dataset.activeChoice || 0);
-      });
-      return;
-    }
-    const selectChoice = event.target.closest("[data-choice-activate]");
-    if (selectChoice) {
-      activateChoice(selectChoice.dataset.choiceActivate, Number(selectChoice.dataset.choiceIndex));
+    const choiceSwitch = event.target.closest("[data-choice-switch]");
+    if (choiceSwitch) {
+      const count = Number(choiceSwitch.dataset.optionCount);
+      const next = (Number(choiceSwitch.dataset.optionCurrent) + 1) % count;
+      activateChoice(choiceSwitch.dataset.choiceSwitch, next);
+      choiceSwitch.dataset.optionCurrent = String(next);
+      choiceSwitch.innerHTML = `Option ${next + 1} of ${count} <span aria-hidden="true">›</span>`;
       refreshCombinedBoard();
+      mountCompletedCourses(plan);
       return;
     }
     const button = event.target.closest("[data-option-switch]");

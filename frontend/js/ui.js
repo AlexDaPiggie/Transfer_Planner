@@ -74,10 +74,7 @@ function renderChoiceCards(group, choices, choiceSetId) {
     const optionGroupId = `${choiceSetId}-choice-${choiceIndex}`;
     const { optionsMarkup, switcher } = renderArticulationOptions(choice.options || [], optionGroupId, group, choiceSetId, choiceIndex);
     const selected = choiceIndex === 0;
-    const selectButton = choices.length > 1
-      ? `<button class="course-choice-select" type="button" data-choice-activate="${choiceSetId}" data-choice-index="${choiceIndex}" aria-pressed="${selected}">${selected ? "Selected" : "Use this choice"}</button>`
-      : "";
-    return `<article class="course-choice-card${selected ? " is-active-choice" : ""}" data-course-choice="${choiceSetId}" data-choice-index="${choiceIndex}" ${choiceIndex ? "hidden" : ""}><div class="course-choice-heading"><strong>${escapeHtml(choice.target_course)}</strong><div class="course-choice-actions">${selectButton}${switcher}</div></div>${optionsMarkup}</article>`;
+    return `<article class="course-choice-card${selected ? " is-active-choice" : ""}" data-course-choice="${choiceSetId}" data-choice-index="${choiceIndex}" ${choiceIndex ? "hidden" : ""}><div class="course-choice-heading"><strong>${escapeHtml(choice.target_course)}</strong>${switcher}</div>${optionsMarkup}</article>`;
   }).join("");
 }
 
@@ -87,14 +84,14 @@ function renderEquivalencyGroup(group, universityIndex, category, groupIndex) {
   const isChoiceSet = choices.length > 0;
   const optionGroupId = `option-${universityIndex}-${category}-${groupIndex}`;
   const { optionsMarkup, switcher } = isChoiceSet ? { optionsMarkup: renderChoiceCards(group, choices, choiceSetId), switcher: "" } : renderArticulationOptions(group.options || [], optionGroupId, group);
-  const choiceToggle = choices.length > 1
-    ? `<button class="choice-options-toggle" type="button" data-choice-toggle="${choiceSetId}" aria-controls="${choiceSetId}-choices" aria-expanded="false">See other course options</button>`
+  const choiceSwitcher = choices.length > 1
+    ? `<button class="option-switch choice-option-switch" type="button" data-choice-switch="${choiceSetId}" data-option-count="${choices.length}" data-option-current="0" aria-label="Show next course or combination">Option 1 of ${choices.length} <span aria-hidden="true">›</span></button>`
     : "";
   const tooltip = `${group.target_course}${group.target_title && group.target_title !== group.target_course ? ` — ${group.target_title}` : ""}`;
   const options = isChoiceSet
     ? `<div id="${choiceSetId}-choices" class="course-choice-list">${optionsMarkup}</div>`
     : optionsMarkup;
-  return `<article class="equivalency-group${isChoiceSet ? " equivalency-choice-set" : ""}" tabindex="0" data-tooltip="${escapeHtml(tooltip)}" aria-label="Community college courses that satisfy ${escapeHtml(tooltip)}" ${isChoiceSet ? `data-choice-set-id="${choiceSetId}" data-active-choice="0"` : ""}><div class="equivalency-group-heading"><span class="equivalency-group-college">${escapeHtml(group.source_name)}${group.is_main_college ? " · Main college" : " · Fallback college"}</span>${switcher}</div>${group.selection_note ? `<div class="equivalency-selection-row"><p class="equivalency-selection-note">${escapeHtml(group.selection_note)}</p>${choiceToggle}</div>` : ""}${options}${group.policy_note ? `<p class="course-policy-note">${escapeHtml(group.policy_note)}</p>` : ""}${group.fallback_note ? `<p class="course-fallback-note">${escapeHtml(group.fallback_note)}</p>` : ""}</article>`;
+  return `<article class="equivalency-group${isChoiceSet ? " equivalency-choice-set" : ""}" tabindex="0" data-tooltip="${escapeHtml(tooltip)}" aria-label="Community college courses that satisfy ${escapeHtml(tooltip)}" ${isChoiceSet ? `data-choice-set-id="${choiceSetId}" data-active-choice="0"` : ""}><div class="equivalency-group-heading"><span class="equivalency-group-college">${escapeHtml(group.source_name)}${group.is_main_college ? " · Main college" : " · Fallback college"}</span>${isChoiceSet ? choiceSwitcher : switcher}</div>${group.selection_note ? `<div class="equivalency-selection-row"><p class="equivalency-selection-note">${escapeHtml(group.selection_note)}</p></div>` : ""}${options}${group.policy_note ? `<p class="course-policy-note">${escapeHtml(group.policy_note)}</p>` : ""}${group.fallback_note ? `<p class="course-fallback-note">${escapeHtml(group.fallback_note)}</p>` : ""}</article>`;
 }
 
 function renderNotArticulatedGroup(group) {

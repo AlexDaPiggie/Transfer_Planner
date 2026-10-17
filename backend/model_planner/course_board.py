@@ -54,7 +54,8 @@ def _choice_groups_from_agreement(payload: dict[str, Any]) -> list[dict[str, Any
                     amount = float(advisement.get("amount", 0))
                 except (TypeError, ValueError):
                     continue
-                if amount != 1 or str(advisement.get("amountUnitType", "")).casefold() != "course":
+                unit_type = re.sub(r"[^a-z]", "", str(advisement.get("amountUnitType", "")).casefold())
+                if amount != 1 or unit_type not in {"course", "courseorcombination"}:
                     continue
                 options = []
                 for row in section.get("rows", []) or []:
