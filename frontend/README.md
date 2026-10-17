@@ -10,7 +10,7 @@ Then open `http://localhost:8080`. To use a different port, run `.\frontend\run_
 
 The launcher starts both the FastAPI backend and the website. `js/config.js` contains the API base URL and the demo-mode switch; live backend calls are enabled by default.
 
-The home page now offers Transfer Planner and Campus Compass. See
+The home page now offers Transfer Planner and De Anza Events. See
 [`../INTEGRATION.md`](../INTEGRATION.md) for the additional event dependencies,
 student-profile database migration, and AI recommendation setup. Restart an
 already-running backend after updating the code to load the new API routes.

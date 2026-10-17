@@ -4,11 +4,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Transfer Pathway</title>
+  <title>De Anza Guide</title>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
   <link rel="stylesheet" href="css/variables.css">
   <link rel="stylesheet" href="css/layout.css">
@@ -24,40 +24,24 @@
 
       <!-- Main navigation -->
       <header class="topbar">
-        <div class="site-brand" aria-label="Transfer Pathway">
-          <span class="site-brand-mark" aria-hidden="true">
-            <svg viewBox="0 0 32 32" role="img">
-              <path d="M7 24c5.8 0 7.1-4.6 9.1-9.2C18 10.2 20.5 8 25 8" />
-              <path d="M7 8h7" />
-              <path d="M22 24h3" />
-              <circle cx="7" cy="8" r="2" />
-              <circle cx="25" cy="8" r="2" />
-              <circle cx="25" cy="24" r="2" />
-            </svg>
-          </span>
+        <a class="site-brand" href="?" aria-label="De Anza Guide home">
+          <span class="site-brand-mark" aria-hidden="true">DA</span>
+          <span class="site-brand-name">De Anza Guide</span>
+        </a>
 
-          <span class="site-brand-name">
-            <span>Transfer</span> <span>Pathway</span>
-          </span>
+        <nav class="primary-nav" aria-label="Main navigation">
+          <a href="?service=transfer" data-service="transfer">Transfer Planner</a>
+          <a href="?service=compass" data-service="compass">De Anza Events</a>
+          <a href="?service=chat" data-service="chat">De Anza Chatbot</a>
+        </nav>
+
+        <div class="header-actions">
+          <div id="auth-controls" class="auth-controls"></div>
+          <button class="theme-switch" id="theme-button" type="button" role="switch" aria-label="Switch to dark theme" aria-checked="false"></button>
         </div>
-
-        <button
-          class="theme-toggle"
-          id="theme-button"
-          aria-label="Change color theme"
-        >
-          ☀ Light
-        </button>
-
-        <div id="auth-controls" class="auth-controls"></div>
       </header>
 
       <!-- Main application -->
-      <nav class="service-nav" aria-label="Services">
-        <a href="?">Home</a>
-        <a href="?service=transfer">Transfer Planner</a>
-        <a href="?service=compass">Campus Compass</a>
-      </nav>
       <section class="page" id="app"></section>
 
     </main>
@@ -81,7 +65,7 @@
       ×
     </button>
 
-    <h2 id="auth-subtitle">Welcome back to Pathway</h2>
+    <h2 id="auth-subtitle">Welcome back to De Anza Guide</h2>
 
     <form id="auth-form">
       <label for="auth-email">Email address</label>

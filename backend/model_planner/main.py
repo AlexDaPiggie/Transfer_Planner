@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from backend.frontend_files import FrontendFiles
 from pydantic import BaseModel, Field
@@ -48,7 +49,7 @@ async def lifespan(app):
                 await task
 
 
-app = FastAPI(title="Transfer Educational Plan AI Assistant", version="2.1.0", lifespan=lifespan)
+app = FastAPI(title="De Anza Guide", version="2.1.0", lifespan=lifespan)
 auth_secret = os.getenv("PATHWAY_SESSION_SECRET")
 if not auth_secret:
     if os.getenv("PATHWAY_ENV") == "production":
@@ -63,6 +64,8 @@ from backend.campus_compass.routes import router as compass_router
 app.include_router(compass_router)
 from backend.campus_compass.notifications import router as notification_router
 app.include_router(notification_router)
+from backend.deanza_chatbot.routes import router as deanza_chat_router
+app.include_router(deanza_chat_router)
 app.add_middleware(CORSMiddleware, allow_credentials=True, allow_headers=["*"], allow_methods=["*"], allow_origins=["http://localhost:5500", "http://127.0.0.1:5500"], allow_origin_regex=r"http://(localhost|127\.0\.0\.1):\d+")
 DEFAULT_YEAR_ID = 77
 SOURCE_NAMES = {
@@ -312,4 +315,6 @@ def api_chat(req: ChatRequest):
 
 # API routes are registered first. The same process can serve the website with
 # same-origin cookies in hosting environments as well as the local launcher.
-app.mount("/", FrontendFiles(directory=Path(__file__).resolve().parents[2] / "frontend", html=True), name="website")
+frontend_directory = Path(__file__).resolve().parents[2] / "frontend"
+app.mount("/chatbot", StaticFiles(directory=frontend_directory / "chatbot", html=True), name="deanza-chatbot")
+app.mount("/", FrontendFiles(directory=frontend_directory, html=True), name="website")

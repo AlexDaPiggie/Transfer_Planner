@@ -3,7 +3,7 @@ import { APP_CONFIG } from "./config.js";
 import { ACTIVE_YEAR_ID, generatePlan, getMajors, getSources, getTargets, sendChat } from "./api.js";
 import { appendMessage, clearSessionMessages, createSession, getAppState, getSavedPlanner, getTheme, savePlanner, selectSession, setTheme } from "./state.js";
 import { escapeHtml, renderCombinedCourseBoard, renderMessages, renderPlan } from "./ui.js";
-import { renderServiceHome, renderCompass } from "./services.js";
+import { renderServiceHome, renderCompass, renderChatbot } from "./services.js";
 
 const app = document.querySelector("#app");
 const themeButton = document.querySelector("#theme-button");
@@ -43,11 +43,32 @@ themeButton.addEventListener("click", () => {
   refreshThemeButton();
 });
 function refreshThemeButton() {
-  themeButton.textContent = document.body.dataset.theme === "dark" ? "☾ Dark" : "☀ Light";
+  const isDark = document.body.dataset.theme === "dark";
+  themeButton.setAttribute("aria-checked", String(isDark));
+  themeButton.setAttribute("aria-label", isDark ? "Switch to light theme" : "Switch to dark theme");
+  themeButton.innerHTML = `<span class="theme-switch-track" aria-hidden="true"><span class="theme-switch-thumb"><span class="theme-switch-icon">${isDark ? "☾" : "☀"}</span></span></span><span class="visually-hidden">${isDark ? "Dark theme" : "Light theme"}</span>`;
+  syncChatbotTheme();
 }
 
+function syncChatbotTheme() {
+  const frame = document.querySelector(".chatbot-frame");
+  frame?.contentWindow?.postMessage({ type: "deanza-guide-theme", theme: document.body.dataset.theme }, location.origin);
+}
+
+window.addEventListener("message", (event) => {
+  const frame = document.querySelector(".chatbot-frame");
+  if (event.origin !== location.origin || event.source !== frame?.contentWindow) return;
+  if (event.data?.type === "deanza-guide-open-auth") {
+    document.querySelector("#auth-controls .auth-button")?.click();
+    return;
+  }
+  if (event.data?.type !== "deanza-chatbot-theme" || !["light", "dark"].includes(event.data.theme)) return;
+  setTheme(event.data.theme);
+  refreshThemeButton();
+});
+
 function pageTemplate(content) {
-  app.innerHTML = `<div class="hero"><h1>Let's make transfer easier</h1><p>Add the Community Colleges you can attend and universities you want to transfer, Pathway will help you to plan out all the courses you could take.</p></div>${content}`;
+  app.innerHTML = `<div class="hero"><h1>Let's make College Easier</h1><p>Choose your colleges and goals. Find courses that move you forward.</p></div>${content}`;
 }
 
 function options(items) {
@@ -528,10 +549,18 @@ async function renderPlanner() {
 }
 
 const selectedService = new URLSearchParams(window.location.search).get("service");
+document.body.classList.toggle("chatbot-view", selectedService === "chat");
+document.body.classList.toggle("home-view", !selectedService);
+document.querySelectorAll(".primary-nav a[data-service]").forEach((link) => {
+  if (link.dataset.service === selectedService) link.setAttribute("aria-current", "page");
+});
 if (selectedService === "compass") {
   renderCompass(app);
 } else if (selectedService === "transfer") {
   renderPlanner();
+} else if (selectedService === "chat") {
+  renderChatbot(app);
+  document.querySelector(".chatbot-frame")?.addEventListener("load", syncChatbotTheme, { once: true });
 } else {
   renderServiceHome(app);
 }

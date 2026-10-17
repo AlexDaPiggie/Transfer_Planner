@@ -63,7 +63,7 @@ function drawControls(user) {
 
 function setMode(next) {
   mode = next;
-  const titles = { login: "Welcome back to Pathway", signup: "Create your Pathway account", forgot: "Recover your account", reset: "Choose a new password" };
+  const titles = { login: "Welcome back to De Anza Guide", signup: "Create your De Anza Guide account", forgot: "Recover your account", reset: "Choose a new password" };
   const actions = { login: "Log in", signup: "Create account", forgot: "Send recovery link", reset: "Save new password" };
   formSubmit.textContent = actions[mode];
   subtitle.textContent = titles[mode];

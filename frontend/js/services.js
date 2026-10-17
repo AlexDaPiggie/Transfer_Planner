@@ -17,11 +17,6 @@ async function request(path, method = "GET", body) {
   return data;
 }
 
-const selected = new URLSearchParams(location.search).get("service");
-document.querySelectorAll(".service-nav a").forEach(link => {
-  if ((new URL(link.href).searchParams.get("service") || "") === (selected || "")) link.setAttribute("aria-current", "page");
-});
-
 const emailAction = new URLSearchParams(location.hash.slice(1));
 for (const [key, endpoint, label] of [["confirm", "confirm-email", "Confirm daily campus emails"], ["unsubscribe", "unsubscribe", "Turn off daily campus emails"]]) {
   if (!emailAction.has(key)) continue;
@@ -33,7 +28,7 @@ for (const [key, endpoint, label] of [["confirm", "confirm-email", "Confirm dail
   button.className = "primary"; button.type = "button"; button.textContent = label;
   const message = document.createElement("p"); message.setAttribute("role", "status");
   banner.append(button, message);
-  document.querySelector(".service-nav").after(banner);
+  document.querySelector(".page").before(banner);
   button.addEventListener("click", async () => {
     button.disabled = true;
     try {
@@ -45,7 +40,21 @@ for (const [key, endpoint, label] of [["confirm", "confirm-email", "Confirm dail
 }
 
 export function renderServiceHome(app) {
-  app.innerHTML = `<div class="hero"><p class="service-eyebrow">YOUR NEXT STEP STARTS HERE</p><h1>One pathway. More possibilities.</h1><p>Plan your transfer and discover opportunities on campus, together in Pathway.</p></div><div class="service-grid"><article class="card service-card"><span class="service-eyebrow">PLAN YOUR FUTURE</span><h2>Transfer Planner</h2><p>Explore university goals, track completed courses, and build a transfer plan from verified ASSIST agreements.</p><a class="primary" href="?service=transfer">Build my transfer plan →</a></article><article class="card service-card"><span class="service-eyebrow">MAKE THE MOST OF TODAY</span><h2>Campus Compass</h2><p>Discover De Anza events, workshops, and deadlines. Use your Pathway account to save a profile and get personalized recommendations.</p><a class="primary" href="?service=compass">Explore campus events →</a></article></div>`;
+  app.innerHTML = `
+    <section class="hero home-hero" aria-labelledby="home-title">
+      <h1 id="home-title">Let's make College Easier</h1>
+      <p>Plan your transfer, find campus events, and get answers.</p>
+    </section>
+    <section class="service-grid" aria-label="De Anza Guide services">
+        <article class="card service-card planner-service"><span class="service-card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21V5.5Z"/><path d="M4 6h13M8 10h8m-8 4h6"/></svg></span><span class="service-eyebrow">Transfer Planner</span><p>Build a transfer plan with verified ASSIST courses.</p><a class="primary" href="?service=transfer">Plan your transfer <span aria-hidden="true">→</span></a></article>
+        <article class="card service-card events-service"><span class="service-card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="16" rx="3"/><path d="M7.5 3v4m9-4v4M4 9h16m-12 4h3m-3 4h7"/></svg></span><span class="service-eyebrow">De Anza Events</span><p>Find campus events, workshops, and key dates.</p><a class="primary" href="?service=compass">Explore events <span aria-hidden="true">→</span></a></article>
+        <article class="card service-card chat-service"><span class="service-card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M20 11.5a7.5 7.5 0 0 1-8 7.5 8.7 8.7 0 0 1-3.7-.8L4 20l1.2-3.7A7.1 7.1 0 0 1 4 12c0-4.1 3.6-7.5 8-7.5s8 3.1 8 7Z"/><path d="M8 12h.01M12 12h.01M16 12h.01"/></svg></span><span class="service-eyebrow">De Anza Chatbot</span><p>Get answers about courses, deadlines, and campus services.</p><a class="primary" href="?service=chat">Ask De Anza <span aria-hidden="true">→</span></a></article>
+    </section>`;
+}
+
+export function renderChatbot(app) {
+  app.classList.add("chatbot-page");
+  app.innerHTML = `<section class="chatbot-service" aria-label="De Anza Chatbot"><iframe class="chatbot-frame" title="De Anza Chatbot" src="/chatbot/?embed=1"></iframe></section>`;
 }
 
 let leafletPromise;
@@ -72,7 +81,7 @@ function safeUrl(value) {
 export async function renderCompass(app) {
   app.classList.add("compass-page");
   app.closest(".content")?.classList.add("compass-content");
-  app.innerHTML = `<div class="hero"><p class="service-eyebrow">CAMPUS COMPASS</p><h1>Find your next opportunity</h1><p>De Anza events and deadlines, with recommendations shaped around you.</p></div><div class="compass-layout"><form class="card compass-profile" id="compass-profile"><h2>Your student profile</h2><label>Major<select name="major" aria-label="Major"></select></label><fieldset class="compass-interests"><legend>What are you looking for?</legend><div class="compass-interest-options" id="compass-interest-options"></div></fieldset><button class="primary" type="submit" disabled>Save and recommend</button><p id="compass-profile-status" class="compass-status" role="status">Log in to save your profile and personalize events.</p></form><section aria-label="Campus events"><div id="compass-map" class="compass-map" aria-label="Map of campus events"></div><p id="compass-status" class="compass-status" role="status">Loading campus events…</p><div id="compass-events" class="compass-events"></div></section></div>`;
+  app.innerHTML = `<div class="hero"><p class="service-eyebrow">DE ANZA EVENTS</p><h1>Find your next opportunity</h1><p>De Anza events and deadlines, shaped around you.</p></div><div class="compass-layout"><form class="card compass-profile" id="compass-profile"><h2>Your student profile</h2><label>Major<select name="major" aria-label="Major"></select></label><fieldset class="compass-interests"><legend>What are you looking for?</legend><div class="compass-interest-options" id="compass-interest-options"></div></fieldset><button class="primary" type="submit" disabled>Save and recommend</button><p id="compass-profile-status" class="compass-status" role="status">Log in to save your profile and personalize events.</p></form><section aria-label="De Anza events"><div id="compass-map" class="compass-map" aria-label="Map of De Anza events"></div><p id="compass-status" class="compass-status" role="status">Loading campus events…</p><div id="compass-events" class="compass-events"></div></section></div>`;
   const form = app.querySelector("form");
   const sidebar = document.createElement("div");
   form.replaceWith(sidebar); sidebar.append(form);

@@ -1,0 +1,120 @@
+// Shared frontend config and markdown helpers.
+
+export const API_ENDPOINTS = {
+  CHAT: "/api/deanza-chat",
+};
+
+function escapeHtml(value = "") {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function normalizeUrl(href = "") {
+  let url = String(href).trim();
+
+  // Strip trailing punctuation often accidentally included by LLM
+  url = url.replace(/[.,;:!?)\]]+$/, "");
+
+  // Rewrite legacy MyPortal links to official Ellucian portal
+  if (/myportal\.deanza\.edu/i.test(url)) {
+    return "https://experience.elluciancloud.com/fdaccdso/";
+  }
+
+  // Rewrite broken funding-dates hallucination to financialaid homepage
+  if (/deanza\.edu\/financialaid\/funding-dates/i.test(url)) {
+    return "https://www.deanza.edu/financialaid/";
+  }
+
+  // Rewrite fabricated registration subpaths to official apply-and-register or schedule
+  if (/deanza\.edu\/registration\/drop-class/i.test(url) || /deanza\.edu\/registration/i.test(url)) {
+    return "https://www.deanza.edu/apply-and-register/";
+  }
+
+  // Rewrite catalog academic year links to official eLumen catalog
+  if (/^https?:\/\/(www\.)?deanza\.edu\/catalog\/(20\d\d-20\d\d\/.*)$/i.test(url)) {
+    return url.replace(/^https?:\/\/(www\.)?deanza\.edu\/catalog\//i, "https://deanza.elumenapp.com/catalog/");
+  }
+
+  if (/^https?:\/\/(www\.)?deanza\.edu\/catalog\/(course\/.*)$/i.test(url)) {
+    return url.replace(/^https?:\/\/(www\.)?deanza\.edu\/catalog\//i, "https://deanza.elumenapp.com/catalog/");
+  }
+
+  // Normalize relative catalog paths like 2025-2026/guaranteed-admission
+  if (/^20\d\d-20\d\d\//.test(url)) {
+    return `https://deanza.elumenapp.com/catalog/${url}`;
+  }
+
+  if (/^\/?catalog\//i.test(url)) {
+    return `https://www.deanza.edu/${url.replace(/^\/+/, "")}`;
+  }
+
+  // Fallback for malformed deanza.edu subpages: if it has > 4 path segments or looks broken
+  if (/^https?:\/\/(www\.)?deanza\.edu\/[a-z0-9_-]+\/[a-z0-9_.-]+\/[a-z0-9_.-]+/i.test(url)) {
+    // Keep as is if it's a known valid subpath pattern, else it will still pass domain check
+  }
+
+  return url;
+}
+
+function safeHref(href = "") {
+  const value = normalizeUrl(href);
+
+  // Validate allowed protocols
+  if (/^mailto:/i.test(value)) return escapeHtml(value);
+  if (!/^https?:\/\//i.test(value)) return "";
+
+  // Allowed official domains
+  const isAllowedDomain = /^(https?:\/\/)?([a-zA-Z0-9.-]+\.)?(deanza\.edu|fhda\.edu|elluciancloud\.com|elumenapp\.com|assist\.org|studentforms\.com|studentaid\.gov|fafsa\.gov|csac\.ca\.gov|cccco\.edu)/i.test(value);
+  if (!isAllowedDomain) {
+    return "";
+  }
+
+  return escapeHtml(value);
+}
+
+// Keep links safe when markdown comes back from the chatbot.
+if (window.marked) {
+  window.marked.use({
+    renderer: {
+      link(token, titleArg, textArg) {
+        const href = typeof token === "object" && token !== null ? token.href : token;
+        const title = typeof token === "object" && token !== null ? token.title : titleArg;
+        const text = typeof token === "object" && token !== null ? token.text : textArg;
+        const finalUrl = safeHref(href);
+
+        // If unverified URL stripped to "" or "#", render clean text without broken link
+        if (!finalUrl || finalUrl === "#") {
+          return escapeHtml(text);
+        }
+
+        const titleAttr = title ? ` title="${escapeHtml(title)}"` : "";
+        return `<a href="${finalUrl}"${titleAttr} target="_blank" rel="noopener noreferrer">${escapeHtml(text)}</a>`;
+      }
+    }
+  });
+}
+
+// Streaming chunks can glue headings/lists together, so clean that up before
+// passing the text to marked.
+export function formatMarkdown(rawText) {
+  if (!rawText) return "";
+
+  const clean = escapeHtml(rawText)
+    // Put headers back on their own block.
+    .replace(/(?:[^\n]|^)\s*(#{1,6}\s+)/g, "\n\n$1")
+    // Split attached header descriptions.
+    .replace(/(#{1,4}\s+[A-Za-z0-9\s/\\-]+?):\s+([A-Za-z])/g, "$1\n$2")
+    // Separate bullet lists that arrive glued to the previous sentence on the same line.
+    .replace(/:(?![ \t]*\n)[ \t]*[\*\-][ \t]+/g, ":\n\n* ")
+    // Same idea, but for bullets after sentence punctuation on the same line.
+    .replace(/([.!?])(?![ \t]*\n)[ \t]+[\*\-][ \t]+/g, "$1\n\n* ")
+    // Avoid huge gaps after normalization.
+    .replace(/\n{3,}/g, "\n\n");
+
+  return window.marked ? window.marked.parse(clean.trim()) : clean;
+}
+
