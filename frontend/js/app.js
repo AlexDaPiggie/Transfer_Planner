@@ -461,7 +461,6 @@ function wirePlanChat(session, plan) {
     updateChatToolbar(session);
   });
   updateChatToolbar(session);
-  input.focus();
 }
 
 async function chat(event, session, plan) {
