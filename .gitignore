@@ -5,9 +5,20 @@ backend/model_planner/__pycache__
 CA_certificate.pem
 frontend/.local-api-output.log
 frontend/.local-api-error.log
+frontend/.local-web-output.log
+frontend/.local-web-error.log
 
 # Local credentials, environments, and backup files
 .env
 .env.local
 .venv311/
 *.before-auth.bak
+
+# Integration source checkout and generated event cache
+scratch/campus-compass/
+backend/campus_compass/__pycache__/
+backend/campus_compass/*.db
+backend/campus_compass/*events*.json
+scratch/integration-preview/
+tests/__pycache__/
+frontend/tests/__pycache__/

@@ -64,6 +64,7 @@ class AssistAPIRetryTests(unittest.TestCase):
 
         with patch.object(scrape_module, "AssistAPI", return_value=FakeAPI()), \
              patch.object(scrape_module, "init_db"), \
+             patch.object(scrape_module, "save_institutions"), \
              patch.object(scrape_module, "remove_dead_route", side_effect=AssertionError("delete called")):
             scrape_module.scrape_all_agreements(year_id=75)
 
@@ -81,6 +82,7 @@ class AssistAPIRetryTests(unittest.TestCase):
         output = StringIO()
         with patch.object(scrape_module, "AssistAPI", return_value=FakeAPI()), \
              patch.object(scrape_module, "init_db"), \
+             patch.object(scrape_module, "save_institutions"), \
              patch.object(scrape_module, "remove_dead_route"), \
              patch("sys.stdout", output):
             scrape_module.scrape_all_agreements(year_id=75)

@@ -1,17 +1,19 @@
 .auth-controls { display: inline-flex; align-items: center; gap: 0.65rem; margin-left: auto; }
 .auth-email { font-size: 0.85rem; opacity: 0.8; max-width: 16rem; overflow: hidden; text-overflow: ellipsis; }
 .auth-button { border: 1px solid currentColor; border-radius: 0.6rem; background: transparent; color: inherit; padding: 0.5rem 0.8rem; cursor: pointer; white-space: nowrap; }
-.auth-dialog { color: #24282f; background: #fff; width: min(92vw, 410px); border: none; border-radius: 1.1rem; padding: 1.5rem; box-shadow: 0 12px 55px rgba(0,0,0,0.25); }
+.auth-dialog { color: var(--ink); background: var(--surface); width: min(92vw, 410px); border: none; border-radius: 1.1rem; padding: 1.5rem; box-shadow: 0 12px 55px rgba(0,0,0,0.25); }
 .auth-dialog::backdrop { background: rgba(16,22,33,0.55); }
 .auth-dialog h2 { font-size: 1.35rem; margin: 0 2rem 0.5rem 0; }
 .auth-dialog form { display: grid; gap: 0.7rem; }
 .auth-dialog input { width: 100%; box-sizing: border-box; border: 1px solid #bbc0c9; border-radius: 0.55rem; padding: 0.7rem; }
 .auth-dialog label { font-size: 0.85rem; font-weight: 600; }
 .auth-dialog button { cursor: pointer; }
-.auth-dialog .auth-primary { background: #244dbb; color: #fff; border: 0; padding: 0.7rem; border-radius: 0.55rem; }
-.auth-dialog .auth-text { background: transparent; border: 0; padding: 0.6rem; color: #244dbb; }
+.auth-dialog .auth-primary { background: var(--primary); color: var(--primary-contrast); border: 0; padding: 0.7rem; border-radius: 0.55rem; }
+.auth-dialog .auth-text { background: transparent; border: 0; padding: 0.6rem; color: var(--primary); }
 .auth-dialog .auth-close { position: absolute; right: 1rem; top: 0.9rem; background: transparent; border: 0; font-size: 1.6rem; }
 .auth-message { color: #bb2538; min-height: 1.2rem; font-size: 0.85rem; }
 .auth-divider { display: flex; align-items: center; justify-content: center; margin: 0.5rem 0; font-size: 0.8rem; color: #667085; }
 #google-signin { min-height: 2.8rem; display: flex; justify-content: center; align-items: center; font-size: 0.85rem; }
 @media (max-width: 640px) { .auth-email { display: none; } }
+
+[hidden]{display:none !important}

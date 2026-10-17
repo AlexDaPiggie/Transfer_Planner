@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from psycopg2.extras import RealDictCursor
 
 from scraper.sync_db import get_db_connection
-from backend.model_planner.auth import _require_origin
+from backend.model_planner.auth import _require_origin, current_user
 
 router = APIRouter(prefix="/api/completed-courses", tags=["completed-courses"])
 
@@ -18,10 +18,10 @@ class CourseSelection(BaseModel):
 
 
 def _user_id(request: Request) -> int:
-    uid = request.session.get("uid")
-    if not isinstance(uid, int) or uid <= 0:
+    user = current_user(request)
+    if not user:
         raise HTTPException(status_code=401, detail="Log in to manage completed courses.")
-    return uid
+    return user["user_id"]
 
 
 def _normalize_code(raw: str) -> str:

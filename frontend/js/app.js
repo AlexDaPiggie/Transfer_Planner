@@ -3,6 +3,7 @@ import { APP_CONFIG } from "./config.js";
 import { ACTIVE_YEAR_ID, generatePlan, getMajors, getSources, getTargets, sendChat } from "./api.js";
 import { appendMessage, clearSessionMessages, createSession, getAppState, getSavedPlanner, getTheme, savePlanner, selectSession, setTheme } from "./state.js";
 import { escapeHtml, renderCombinedCourseBoard, renderMessages, renderPlan } from "./ui.js";
+import { renderServiceHome, renderCompass } from "./services.js";
 
 const app = document.querySelector("#app");
 const themeButton = document.querySelector("#theme-button");
@@ -285,11 +286,20 @@ function showPlan(plan, session) {
     results.querySelectorAll(`[data-option-group="${groupId}"]`).forEach((option) => {
       option.hidden = Number(option.dataset.optionIndex) !== nextOption;
     });
+    const [, universityIndex, category, groupIndex] = groupId.match(/^option-(\d+)-(required|recommended)-(\d+)$/) || [];
+    const group = plan.plan?.course_board?.universities?.[Number(universityIndex)]?.[category]?.[Number(groupIndex)];
+    if (group) {
+      group.selected_option = nextOption;
+      persistPlanner(plan);
+    }
     button.dataset.optionCurrent = String(nextOption);
     button.innerHTML = `Option ${nextOption + 1} of ${optionCount} <span aria-hidden="true">›</span>`;
     const combinedBoard = results.querySelector("#combined-course-board");
     const board = plan.plan?.course_board;
-    if (combinedBoard && board) combinedBoard.innerHTML = renderCombinedCourseBoard(board, true);
+    if (combinedBoard && board) {
+      combinedBoard.innerHTML = renderCombinedCourseBoard(board, true);
+      mountCompletedCourses(plan);
+    }
   };
   wirePlanChat(session, plan);
   mountCompletedCourses(plan);
@@ -494,6 +504,11 @@ async function renderPlanner() {
   }
 }
 
-if (!APP_CONFIG.useDemoData) {
+const selectedService = new URLSearchParams(window.location.search).get("service");
+if (selectedService === "compass") {
+  renderCompass(app);
+} else if (selectedService === "transfer") {
   renderPlanner();
+} else {
+  renderServiceHome(app);
 }

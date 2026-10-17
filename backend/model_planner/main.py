@@ -1,9 +1,13 @@
 """FastAPI boundary between the browser, verified agreement data, and AI models."""
 import json
+import asyncio
+from contextlib import asynccontextmanager, suppress
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from backend.frontend_files import FrontendFiles
 from pydantic import BaseModel, Field
 
 from backend.model_planner.course_board import build_course_board
@@ -20,7 +24,29 @@ import os
 import secrets
 from backend.model_planner.auth import router as auth_router
 load_dotenv(".env.local", override=True)
-app = FastAPI(title="Transfer Educational Plan AI Assistant", version="2.0.0")
+
+
+@asynccontextmanager
+async def lifespan(app):
+    from backend.campus_compass.routes import refresh_loop
+    refresh_task = asyncio.create_task(refresh_loop())
+    task = None
+    if os.getenv("PATHWAY_DAILY_EMAILS_ENABLED", "false").lower() in ("true", "1", "yes"):
+        from backend.campus_compass.daily_email import delivery_loop
+        task = asyncio.create_task(delivery_loop())
+    try:
+        yield
+    finally:
+        refresh_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await refresh_task
+        if task:
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+
+
+app = FastAPI(title="Transfer Educational Plan AI Assistant", version="2.1.0", lifespan=lifespan)
 auth_secret = os.getenv("PATHWAY_SESSION_SECRET")
 if not auth_secret:
     if os.getenv("PATHWAY_ENV") == "production":
@@ -31,6 +57,10 @@ app.add_middleware(SessionMiddleware, secret_key=auth_secret, session_cookie="pa
 app.include_router(auth_router)
 from backend.model_planner.completed_courses import router as completed_courses_router
 app.include_router(completed_courses_router)
+from backend.campus_compass.routes import router as compass_router
+app.include_router(compass_router)
+from backend.campus_compass.notifications import router as notification_router
+app.include_router(notification_router)
 app.add_middleware(CORSMiddleware, allow_credentials=True, allow_headers=["*"], allow_methods=["*"], allow_origins=["http://localhost:5500", "http://127.0.0.1:5500"], allow_origin_regex=r"http://(localhost|127\.0\.0\.1):\d+")
 DEFAULT_YEAR_ID = 77
 SOURCE_NAMES = {
@@ -276,3 +306,8 @@ def api_chat(req: ChatRequest):
     except RuntimeError as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
     return reply.model_dump()
+
+
+# API routes are registered first. The same process can serve the website with
+# same-origin cookies in hosting environments as well as the local launcher.
+app.mount("/", FrontendFiles(directory=Path(__file__).resolve().parents[2] / "frontend", html=True), name="website")

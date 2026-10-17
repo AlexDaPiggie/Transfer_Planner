@@ -1,7 +1,9 @@
 // UI and account-scoped storage for community-college classes students have completed.
 // A plan is just a view: account records are fetched again after sign-in/out.
-const apiBase = `http://${window.location.hostname}:8000`;
+import { API_BASE } from "./config.js";
+const apiBase = API_BASE;
 let activeBoard = null;
+const wiredBoards = new WeakSet();
 let completed = new Set();
 let user = null;
 let ready = false;
@@ -66,14 +68,45 @@ function decorateCard(card) {
     }
     controls.append(picker);
   }
-  const button = make("button", "course-completion-button", "Mark as completed");
+  const button = make("button", "course-completion-button", "Mark complete");
   button.type = "button";
   button.dataset.completionToggle = "1";
   controls.append(button);
   card.append(controls);
 }
+function drawUniversityCompletions() {
+  for (const university of document.querySelectorAll("#results .university-course-plan")) {
+    for (const row of university.querySelectorAll(".equivalency-course[data-source-id][data-course-code]")) {
+      const isDone = !!user && ready && cardVariants(row).some(entry => completed.has(entry.key));
+      row.classList.toggle("is-completed-course", isDone);
+      let badge = row.querySelector(".university-course-completed-badge");
+      if (!badge) {
+        badge = make("span", "university-course-completed-badge", "Completed");
+        row.append(badge);
+      }
+      badge.hidden = !isDone;
+      decorateCard(row);
+      const button = row.querySelector('.course-completion-button');
+      button.textContent = !user ? 'Log in to track' : !ready ? 'Loading...' : isDone ? 'Undo' : 'Mark complete';
+      button.disabled = !user || !ready || saving;
+      const picker = row.querySelector('.course-variant-select');
+      if (picker) picker.disabled = !user || !ready || saving || isDone;
+    }
+    for (const group of university.querySelectorAll(".equivalency-group:not(.not-articulated-group)")) {
+      const isDone = [...group.querySelectorAll('.equivalency-option')].some(option => {
+        const rows = [...option.querySelectorAll('.equivalency-course')];
+        return rows.length > 0 && (option.dataset.courseConjunction === 'or'
+          ? rows.some(row => row.classList.contains('is-completed-course'))
+          : rows.every(row => row.classList.contains('is-completed-course')));
+      });
+      group.classList.toggle("is-completed-requirement", isDone);
+    }
+  }
+}
+
 function draw() {
   if (!activeBoard?.isConnected) return;
+  drawUniversityCompletions();
   for (const column of activeBoard.querySelectorAll(".course-column.recommended, .course-column.required")) {
     prepareColumn(column);
     const pending = column.querySelector(".course-card-list");
@@ -90,7 +123,7 @@ function draw() {
       const button = control.querySelector("button");
       if (picker && isDone) picker.value = matched.code;
       if (picker) picker.disabled = !user || !ready || saving || isDone;
-      button.textContent = !user ? "Log in to track" : !ready ? "Loading..." : isDone ? "Undo completed" : "Mark as completed";
+      button.textContent = !user ? "Log in to track" : !ready ? "Loading..." : isDone ? "Undo" : "Mark complete";
       button.disabled = !user || !ready || saving;
       (isDone ? finishedList : pending).append(card);
     }
@@ -148,7 +181,7 @@ async function refresh() {
 
 async function toggleCompleted(button) {
   if (!user || !ready || saving) return;
-  const card = button.closest(".course-board-card");
+  const card = button.closest(".course-board-card, .equivalency-course");
   const column = card?.closest(".course-column");
   if (!card || !column) return;
   const variants = cardVariants(card);
@@ -182,17 +215,26 @@ async function toggleCompleted(button) {
 
 // Called whenever the current plan is rendered, including saved plans.
 export function mountCompletedCourses(plan) {
-  const board = document.querySelector("#results .course-board-columns");
+  const board = document.querySelector("#results #combined-course-board .course-board-columns")
+    || document.querySelector("#results .course-board-columns");
   activeBoard = board;
   if (!board || !plan?.plan?.course_board) return;
   for (const column of board.querySelectorAll(".course-column.recommended, .course-column.required")) {
     prepareColumn(column);
   }
-  board.addEventListener("click", (event) => {
-    const button = event.target.closest("button[data-completion-toggle]");
-    if (button && board.contains(button)) toggleCompleted(button);
-  });
+  if (!wiredBoards.has(board)) {
+    board.addEventListener("click", (event) => {
+      const button = event.target.closest("button[data-completion-toggle]");
+      if (button && board.contains(button)) toggleCompleted(button);
+    });
+    wiredBoards.add(board);
+  }
   refresh();
 }
+
+document.addEventListener('click', event => {
+  const button = event.target.closest('.university-course-plan button[data-completion-toggle]');
+  if (button) toggleCompleted(button);
+});
 
 window.addEventListener("pathway:auth-changed", () => { if (activeBoard?.isConnected) refresh(); });

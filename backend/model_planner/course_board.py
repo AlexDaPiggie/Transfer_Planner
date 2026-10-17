@@ -427,7 +427,8 @@ def build_course_board(
                     card["variants"].setdefault(variant_key, course)
                     if category == "required":
                         card["category"] = "required"
-                    card["goals"][goal_key] = {"label": f"{agreement['target_name']} — {major}", "dot_index": goal_indexes[goal_key]}
+                    previous_role = card["goals"].get(goal_key, {}).get("category")
+                    card["goals"][goal_key] = {"label": f"{agreement['target_name']} — {major}", "dot_index": goal_indexes[goal_key], "category": "required" if previous_role == "required" else category}
                     card["assist_urls"].add(_build_assist_url(agreement.get("year_id", requested_year_id), source_id, target_id, agreement["document_key"]))
                     if requirement_key in fallback_notes:
                         card["fallback_notes"].add(fallback_notes[requirement_key])

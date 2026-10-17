@@ -15,6 +15,7 @@
   <link rel="stylesheet" href="css/components.css">
   <link rel="stylesheet" href="css/planner.css">
   <link rel="stylesheet" href="css/auth.css">
+  <link rel="stylesheet" href="css/services.css">
 </head>
 
 <body>
@@ -52,6 +53,11 @@
       </header>
 
       <!-- Main application -->
+      <nav class="service-nav" aria-label="Services">
+        <a href="?">Home</a>
+        <a href="?service=transfer">Transfer Planner</a>
+        <a href="?service=compass">Campus Compass</a>
+      </nav>
       <section class="page" id="app"></section>
 
     </main>
@@ -120,6 +126,7 @@
       ></p>
     </form>
 
+    <button class="auth-text" id="auth-forgot" type="button" hidden>Forgot password?</button>
     <div class="auth-divider">or</div>
 
     <div id="google-signin"></div>

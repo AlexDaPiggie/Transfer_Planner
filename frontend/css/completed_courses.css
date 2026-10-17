@@ -8,10 +8,15 @@
 .course-completed-section[hidden] { display: none; }
 .course-completed-heading { margin: 0 0 12px; font-size: 1rem; }
 .course-completed-list { display: grid; gap: 12px; }
-.is-completed-course { opacity: 0.8; }
+.is-completed-course { filter: grayscale(1); opacity: .68; }
 .is-completed-course .course-completion-button { border-color: #597e6c; }
 .course-completion-status { font-size: 0.83rem; opacity: 0.8; margin: 6px 0; }
 .course-completion-status:empty { display: none; }
 .course-completion-status.is-error { color: #aa3e3e; opacity: 1; }
 .course-all-completed { font-size: 0.9rem; opacity: 0.8; }
 .course-all-completed[hidden] { display: none; }
+.equivalency-course { flex-wrap: wrap; }
+.equivalency-course > .course-completion-controls { flex-basis: 100%; margin-top: 4px; }
+.equivalency-course .course-completion-button { width: auto; align-self: flex-start; font-size: .8rem; padding: 6px 10px; }
+
+.equivalency-course.is-completed-course{background:color-mix(in srgb,var(--surface) 80%,var(--border));border-radius:8px;padding:9px}.equivalency-course.is-completed-course strong{text-decoration:line-through;text-decoration-thickness:1px}.university-course-completed-badge{display:inline-block;align-self:center;flex:none;color:var(--muted);font-size:.7rem;font-weight:700;border:1px solid var(--border);border-radius:6px;padding:3px 6px}.university-course-completed-badge[hidden]{display:none}.equivalency-group.is-completed-requirement{filter:grayscale(1);border-color:var(--muted)}
