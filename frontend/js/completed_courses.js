@@ -75,7 +75,7 @@ function decorateCard(card) {
   card.append(controls);
 }
 function drawUniversityCompletions() {
-  for (const university of document.querySelectorAll("#results .university-course-plan, #results #combined-course-board")) {
+  for (const university of document.querySelectorAll("#results .university-course-plan")) {
     for (const column of university.querySelectorAll(".course-column.required, .course-column.recommended")) {
       if (!column.querySelector(".course-completion-status")) {
         const status = make("p", "course-completion-status");
@@ -100,8 +100,8 @@ function drawUniversityCompletions() {
       if (picker) picker.disabled = !user || !ready || saving || isDone;
     }
     for (const group of university.querySelectorAll(".equivalency-group:not(.not-articulated-group)")) {
-      // Any valid articulation alternative can satisfy the requirement,
-      // including alternatives hidden by the current display selection.
+      // All alternatives satisfy this requirement, including hidden options.
+      // Keep actual course completion independent of requirement satisfaction.
       const isDone = [...group.querySelectorAll('.equivalency-option')].some(option => {
         const parts = new Map();
         for (const row of option.querySelectorAll('.equivalency-course')) {

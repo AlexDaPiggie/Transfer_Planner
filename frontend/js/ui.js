@@ -48,8 +48,8 @@ function renderUnavailableCourseCard(course) {
   return `<article class="unavailable-course-card"><div class="course-card-top"><h4>${escapeHtml(course.course_code)}</h4><div class="course-dots" aria-label="Required by ${course.supports_count} university goal${course.supports_count === 1 ? "" : "s"}">${dots}</div></div><p class="unavailable-course-reason">${escapeHtml(course.reason)}</p></article>`;
 }
 
-function renderCourseColumn(title, description, courses, kind, renderCard = renderCourseCard, emptyMessage = "No courses in this group were found in the saved Assist agreement.", equivalencyGroups = []) {
-  const content = [...equivalencyGroups, ...courses.map(renderCard)].join("") || `<p class="empty-course-column">${escapeHtml(emptyMessage)}</p>`;
+function renderCourseColumn(title, description, courses, kind, renderCard = renderCourseCard, emptyMessage = "No courses in this group were found in the saved Assist agreement.") {
+  const content = courses.length ? courses.map(renderCard).join("") : `<p class="empty-course-column">${escapeHtml(emptyMessage)}</p>`;
   return `<section class="course-column ${kind}"><div class="course-column-heading"><h3>${title}</h3><p>${description}</p></div><div class="course-card-list">${content}</div></section>`;
 }
 
@@ -57,26 +57,24 @@ function renderOptionCourse(course) {
   return `<div class="equivalency-course" data-source-id="${escapeHtml(course.source_id)}" data-course-code="${escapeHtml(course.code)}" data-completion-part="${course.completion_part}" data-course-conjunction="${course.conjunction === "or" ? "or" : "and"}"><strong>${escapeHtml(course.code)}</strong></div>`;
 }
 
-function renderArticulationOptions(options, optionGroupId, group, choiceSetId = null, choiceIndex = null, selectedOption = 0) {
+function renderArticulationOptions(options, optionGroupId, group, choiceSetId = null, choiceIndex = null) {
   const optionsMarkup = options.map((option, optionIndex) => {
     const parts = option.groups || [{ courses: option.courses || [], conjunction: option.conjunction || "and" }];
     const contents = parts.map((part, partIndex) => `${partIndex ? `<span class="equivalency-conjunction">and</span>` : ""}${(part.courses || []).map((course, courseIndex) => `${courseIndex ? `<span class="equivalency-conjunction">${part.conjunction === "or" ? "or" : "and"}</span>` : ""}${renderOptionCourse({ ...course, source_id: group.source_id, source_name: group.source_name, completion_part: partIndex, conjunction: part.conjunction })}`).join("")}`).join("");
-    return `<div class="equivalency-option" data-option-group="${optionGroupId}" data-option-index="${optionIndex}" ${optionIndex !== selectedOption ? "hidden" : ""}>${contents}</div>`;
+    return `<div class="equivalency-option" data-option-group="${optionGroupId}" data-option-index="${optionIndex}" ${optionIndex ? "hidden" : ""}>${contents}</div>`;
   }).join("");
   const switcher = options.length > 1
-    ? `<button class="option-switch" type="button" data-option-switch="${optionGroupId}" ${choiceSetId ? `data-choice-set-id="${choiceSetId}" data-choice-index="${choiceIndex}"` : ""} data-option-count="${options.length}" data-option-current="${selectedOption}" aria-label="Show next articulated course group">${escapeHtml(options[selectedOption]?.label || `Option ${selectedOption + 1} of ${options.length}`)} <span aria-hidden="true">›</span></button>`
+    ? `<button class="option-switch" type="button" data-option-switch="${optionGroupId}" ${choiceSetId ? `data-choice-set-id="${choiceSetId}" data-choice-index="${choiceIndex}"` : ""} data-option-count="${options.length}" data-option-current="0" aria-label="Show next articulated course group">${escapeHtml(options[0].label || `Option 1 of ${options.length}`)} <span aria-hidden="true">›</span></button>`
     : "";
   return { optionsMarkup, switcher };
 }
 
 function renderChoiceCards(group, choices, choiceSetId) {
-  const activeChoice = Math.min(Number(group.active_choice || 0), Math.max(0, choices.length - 1));
   return choices.map((choice, choiceIndex) => {
     const optionGroupId = `${choiceSetId}-choice-${choiceIndex}`;
-    const selectedOption = choiceIndex === activeChoice ? Number(group.active_option || 0) : 0;
-    const { optionsMarkup, switcher } = renderArticulationOptions(choice.options || [], optionGroupId, group, choiceSetId, choiceIndex, selectedOption);
-    const selected = choiceIndex === activeChoice;
-    return `<article class="course-choice-card${selected ? " is-active-choice" : ""}" data-course-choice="${choiceSetId}" data-choice-index="${choiceIndex}" ${selected ? "" : "hidden"}><div class="course-choice-heading"><strong>${escapeHtml(choice.target_course)}</strong>${switcher}</div>${optionsMarkup}</article>`;
+    const { optionsMarkup, switcher } = renderArticulationOptions(choice.options || [], optionGroupId, group, choiceSetId, choiceIndex);
+    const selected = choiceIndex === 0;
+    return `<article class="course-choice-card${selected ? " is-active-choice" : ""}" data-course-choice="${choiceSetId}" data-choice-index="${choiceIndex}" ${choiceIndex ? "hidden" : ""}><div class="course-choice-heading"><strong>${escapeHtml(choice.target_course)}</strong>${switcher}</div>${optionsMarkup}</article>`;
   }).join("");
 }
 
@@ -85,16 +83,15 @@ function renderEquivalencyGroup(group, universityIndex, category, groupIndex) {
   const choices = group.choices || [];
   const isChoiceSet = choices.length > 0;
   const optionGroupId = `option-${universityIndex}-${category}-${groupIndex}`;
-  const activeChoice = Math.min(Number(group.active_choice || 0), Math.max(0, choices.length - 1));
-  const { optionsMarkup, switcher } = isChoiceSet ? { optionsMarkup: renderChoiceCards(group, choices, choiceSetId), switcher: "" } : renderArticulationOptions(group.options || [], optionGroupId, group, null, null, Number(group.active_option || 0));
+  const { optionsMarkup, switcher } = isChoiceSet ? { optionsMarkup: renderChoiceCards(group, choices, choiceSetId), switcher: "" } : renderArticulationOptions(group.options || [], optionGroupId, group);
   const choiceSwitcher = choices.length > 1
-    ? `<button class="option-switch choice-option-switch" type="button" data-choice-switch="${choiceSetId}" data-option-count="${choices.length}" data-option-current="${activeChoice}" aria-label="Show next course or combination">Option ${activeChoice + 1} of ${choices.length} <span aria-hidden="true">›</span></button>`
+    ? `<button class="option-switch choice-option-switch" type="button" data-choice-switch="${choiceSetId}" data-option-count="${choices.length}" data-option-current="0" aria-label="Show next course or combination">Option 1 of ${choices.length} <span aria-hidden="true">›</span></button>`
     : "";
   const tooltip = `${group.target_course}${group.target_title && group.target_title !== group.target_course ? ` — ${group.target_title}` : ""}`;
   const options = isChoiceSet
     ? `<div id="${choiceSetId}-choices" class="course-choice-list">${optionsMarkup}</div>`
     : optionsMarkup;
-  return `<article class="equivalency-group${isChoiceSet ? " equivalency-choice-set" : ""}" tabindex="0" data-tooltip="${escapeHtml(tooltip)}" aria-label="Community college courses that satisfy ${escapeHtml(tooltip)}" ${isChoiceSet ? `data-choice-set-id="${choiceSetId}" data-active-choice="${activeChoice}"` : ""}><div class="equivalency-group-heading"><span class="equivalency-group-college">${escapeHtml(group.source_name)}${group.is_main_college ? " · Main college" : " · Fallback college"}</span>${isChoiceSet ? choiceSwitcher : switcher}</div>${group.selection_note ? `<div class="equivalency-selection-row"><p class="equivalency-selection-note">${escapeHtml(group.selection_note)}</p></div>` : ""}${options}${group.policy_note ? `<p class="course-policy-note">${escapeHtml(group.policy_note)}</p>` : ""}${group.fallback_note ? `<p class="course-fallback-note">${escapeHtml(group.fallback_note)}</p>` : ""}</article>`;
+  return `<article class="equivalency-group${isChoiceSet ? " equivalency-choice-set" : ""}" tabindex="0" data-tooltip="${escapeHtml(tooltip)}" aria-label="Community college courses that satisfy ${escapeHtml(tooltip)}" ${isChoiceSet ? `data-choice-set-id="${choiceSetId}" data-active-choice="0"` : ""}><div class="equivalency-group-heading"><span class="equivalency-group-college">${escapeHtml(group.source_name)}${group.is_main_college ? " · Main college" : " · Fallback college"}</span>${isChoiceSet ? choiceSwitcher : switcher}</div>${group.selection_note ? `<div class="equivalency-selection-row"><p class="equivalency-selection-note">${escapeHtml(group.selection_note)}</p></div>` : ""}${options}${group.policy_note ? `<p class="course-policy-note">${escapeHtml(group.policy_note)}</p>` : ""}${group.fallback_note ? `<p class="course-fallback-note">${escapeHtml(group.fallback_note)}</p>` : ""}</article>`;
 }
 
 function renderNotArticulatedGroup(group) {
@@ -123,7 +120,6 @@ function renderCourseBoard(board) {
 function combinedBoardFromUniversityPlans(board, readDisplayedOptions = false) {
   const cardsByStage = new Map();
   const unavailableByCourse = new Map();
-  const choiceGroups = { required: [], recommended: [] };
   const goalIndexByLabel = new Map((board.legend || []).map((goal, index) => [goal.label, goal.dot_index ?? index]));
   (board.universities || []).forEach((university, universityIndex) => {
     const goalLabel = `${university.university} — ${university.major}`;
@@ -136,20 +132,6 @@ function combinedBoardFromUniversityPlans(board, readDisplayedOptions = false) {
           ? document.querySelector(`[data-choice-set-id="${choiceSetId}"]`)
           : null;
         const choiceIndex = Math.min(Number(choiceSetElement?.dataset.activeChoice || 0), Math.max(0, choiceSet.length - 1));
-        if (choiceSet.length) {
-          const choice = choiceSet[choiceIndex];
-          const optionGroupId = `${choiceSetId}-choice-${choiceIndex}`;
-          const switcher = readDisplayedOptions
-            ? document.querySelector(`[data-option-switch="${optionGroupId}"]`)
-            : null;
-          const optionIndex = Math.min(Number(switcher?.dataset.optionCurrent ?? 0), Math.max(0, (choice?.options || []).length - 1));
-          choiceGroups[category].push({
-            group: { ...group, active_choice: choiceIndex, active_option: optionIndex },
-            universityIndex,
-            groupIndex,
-          });
-          continue;
-        }
         const choice = choiceSet[choiceIndex];
         const options = choice?.options || group.options || [];
         const optionGroupId = choice ? `${choiceSetId}-choice-${choiceIndex}` : `option-${universityIndex}-${category}-${groupIndex}`;
@@ -223,18 +205,11 @@ function combinedBoardFromUniversityPlans(board, readDisplayedOptions = false) {
     return course;
   }).sort(sortCourses);
   const legend = (board.legend || []).map((goal, index) => ({ ...goal, dot_index: goal.dot_index ?? index }));
-  return { ...board, required, recommended, not_articulated, legend, choiceGroups };
+  return { ...board, required, recommended, not_articulated, legend };
 }
 
 export function renderCombinedCourseBoard(board, readDisplayedOptions = false) {
-  const combinedBoard = combinedBoardFromUniversityPlans(board, readDisplayedOptions);
-  const goalChips = (combinedBoard.legend || []).map((goal) => `<span class="selected-goal-chip dot-chip-${goal.dot_index % 8}"><span class="university-dot dot-${goal.dot_index % 8}"></span>${escapeHtml(goal.label)}</span>`).join("");
-  const footnotes = (combinedBoard.footnotes || []).map((note) => `<li>${escapeHtml(note)}</li>`).join("");
-  const column = (title, description, key, courses, renderCard = renderCourseCard, emptyMessage) => {
-    const groups = (combinedBoard.choiceGroups?.[key] || []).map(({ group, universityIndex, groupIndex }) => renderEquivalencyGroup(group, universityIndex, key, groupIndex));
-    return renderCourseColumn(title, description, courses, key, renderCard, emptyMessage, groups);
-  };
-  return `<section class="transfer-board"><div class="transfer-board-goals"><h2>University goals</h2><div class="selected-goal-chips">${goalChips}</div></div><div class="course-board-layout"><div class="course-board-columns">${column("Required", "Required by at least one selected university. See each course for school-specific requirements.", "required", combinedBoard.required || [])}${column("Recommended", "Recommended by selected universities; none list these courses as required.", "recommended", combinedBoard.recommended || [])}${column("Not articulated", "University requirements without an articulated option at any selected community college.", "not_articulated", combinedBoard.not_articulated || [], renderUnavailableCourseCard, "Every listed university requirement has an articulated option at a selected college.")}</div>${footnotes ? `<article class="course-board-footnotes"><h3>Important course-placement notes</h3><ul>${footnotes}</ul></article>` : ""}</div></section>`;
+  return renderCourseBoard(combinedBoardFromUniversityPlans(board, readDisplayedOptions));
 }
 
 export function renderPlan(plan) {
