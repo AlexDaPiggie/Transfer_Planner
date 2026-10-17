@@ -22,3 +22,7 @@ backend/campus_compass/*events*.json
 scratch/integration-preview/
 tests/__pycache__/
 frontend/tests/__pycache__/
+
+.venv/
+__pycache__/
+*.py[cod]
