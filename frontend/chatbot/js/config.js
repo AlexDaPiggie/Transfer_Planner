@@ -1,8 +1,15 @@
 // Shared frontend config and markdown helpers.
 
 export const API_ENDPOINTS = {
-  CHAT: "/api/deanza-chat",
+  CHAT: `${getApiBase()}/api/deanza-chat`,
 };
+
+function getApiBase() {
+  const localHost = ["localhost", "127.0.0.1", "[::1]"].includes(window.location.hostname);
+  return localHost && window.location.port !== "8000"
+    ? `${window.location.protocol}//${window.location.hostname}:8000`
+    : window.location.origin;
+}
 
 function escapeHtml(value = "") {
   return String(value)
