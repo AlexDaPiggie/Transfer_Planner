@@ -426,13 +426,20 @@ html.embedded-chatbot .app-shell {
   top: 0;
   z-index: 25;
   flex: 0 0 auto;
-  min-height: 0;
+  min-height: 69px;
   padding: 4px clamp(16px, 3vw, 42px) 22px;
   border-bottom: 1px solid var(--border);
-  background: var(--page-bg);
-  background-size: 120% 120%;
-  animation: calmGradient 16s ease-in-out infinite alternate;
+  background: transparent;
   backdrop-filter: none;
+  transition: background-color .22s ease, border-color .22s ease, box-shadow .22s ease, backdrop-filter .22s ease;
+}
+
+.guide-topbar.is-scrolled {
+  border-color: color-mix(in srgb, var(--border) 74%, transparent);
+  background: color-mix(in srgb, var(--page-bg) 76%, transparent);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--ink) 8%, transparent);
+  backdrop-filter: blur(18px) saturate(145%);
+  -webkit-backdrop-filter: blur(18px) saturate(145%);
 }
 
 .guide-site-brand {
@@ -517,7 +524,7 @@ html.embedded-chatbot .app-shell {
 body[data-theme="dark"] .guide-topbar .theme-switch-thumb { transform: translate(18px, -50%); }
 
 @media (max-width: 900px) {
-  .guide-topbar { min-height: 0; padding: 4px 18px 18px; }
+  .guide-topbar { min-height: 69px; padding: 4px 18px 22px; }
   .guide-topbar-nav { gap: 1px; overflow-x: auto; scrollbar-width: none; }
   .guide-topbar-nav::-webkit-scrollbar { display: none; }
   .guide-topbar-nav a { flex: 0 0 auto; padding: 8px; font-size: .78rem; }
@@ -527,9 +534,9 @@ body[data-theme="dark"] .guide-topbar .theme-switch-thumb { transform: translate
 
 @media (max-width: 760px) {
   html.embedded-chatbot .top-bar.guide-topbar { display: flex; }
-  .guide-topbar { align-items: center; gap: 10px; padding: 10px 16px 14px; }
-  .guide-topbar .top-actions { order: 2; gap: 7px; margin-left: auto; }
-  .guide-topbar-nav { order: 3; flex: 1 0 100%; justify-content: center; margin: 0; }
+  .guide-topbar { min-height: 0; flex-wrap: wrap; align-items: center; column-gap: 10px; row-gap: 10px; padding: 4px 16px 16px; }
+  .guide-topbar .top-actions { order: 1; gap: 7px; margin-left: auto; }
+  .guide-topbar-nav { order: 2; flex: 1 0 100%; justify-content: center; margin: 0; }
 }
 
 @media (max-width: 440px) {

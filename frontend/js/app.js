@@ -4,6 +4,7 @@ import { ACTIVE_YEAR_ID, generatePlan, getMajors, getSources, getTargets, sendCh
 import { appendMessage, clearSessionMessages, createSession, getAppState, getSavedPlanner, getTheme, savePlanner, selectSession, setTheme } from "./state.js";
 import { escapeHtml, renderCombinedCourseBoard, renderMessages, renderPlan } from "./ui.js";
 import { renderServiceHome, renderCompass, renderChatbot } from "./services.js";
+import { startTypingHeadline, typingHeadlineMarkup } from "./typing_headline.js";
 
 const app = document.querySelector("#app");
 const themeButton = document.querySelector("#theme-button");
@@ -68,7 +69,8 @@ window.addEventListener("message", (event) => {
 });
 
 function pageTemplate(content) {
-  app.innerHTML = `<div class="hero"><h1>Let's make College Easier</h1></div>${content}`;
+  app.innerHTML = `<div class="hero"><p class="eyebrow">De Anza Guide</p>${typingHeadlineMarkup("Let's make College Easier")}</div>${content}`;
+  startTypingHeadline(app.querySelector(".typing-headline"));
 }
 
 function options(items) {
@@ -299,13 +301,17 @@ function showPlan(plan, session) {
   const results = document.querySelector("#results");
   results.innerHTML = `${renderPlan(plan)}<section class="card plan-chat" aria-label="Ask a question about your plan"><form class="plan-chat-form" id="chat-form"><label class="visually-hidden" for="message">Ask a question about your transfer plan</label><textarea id="message" rows="1" placeholder="Ask about courses, articulation, or policies in your plan…" required></textarea><button class="chat-submit" id="chat-submit" type="button" aria-label="Send question"><span aria-hidden="true">›</span></button></form><div class="chat-toolbar"><button class="chat-text-button" id="toggle-answers" type="button" aria-controls="answer-panel" aria-expanded="true" hidden>Show answers</button><button class="chat-text-button" id="clear-chat" type="button" disabled>Clear</button></div><section class="answer-panel" id="answer-panel" aria-label="Questions and answers" aria-live="polite" hidden><div class="messages" id="messages"></div></section></section>`;
   const activateChoice = (choiceSetId, choiceIndex) => {
-    const choiceSet = results.querySelector(`[data-choice-set-id="${choiceSetId}"]`);
-    if (!choiceSet) return;
-    choiceSet.dataset.activeChoice = String(choiceIndex);
-    choiceSet.querySelectorAll(".course-choice-card").forEach((card) => {
-      const selected = Number(card.dataset.choiceIndex) === choiceIndex;
-      card.classList.toggle("is-active-choice", selected);
-      card.hidden = !selected;
+    results.querySelectorAll(`[data-choice-set-id="${choiceSetId}"]`).forEach((choiceSet) => {
+      choiceSet.dataset.activeChoice = String(choiceIndex);
+      choiceSet.querySelectorAll(".course-choice-card").forEach((card) => {
+        const selected = Number(card.dataset.choiceIndex) === choiceIndex;
+        card.classList.toggle("is-active-choice", selected);
+        card.hidden = !selected;
+      });
+    });
+    results.querySelectorAll(`[data-choice-switch="${choiceSetId}"]`).forEach((switcher) => {
+      switcher.dataset.optionCurrent = String(choiceIndex);
+      switcher.innerHTML = `Option ${choiceIndex + 1} of ${switcher.dataset.optionCount} <span aria-hidden="true">›</span>`;
     });
   };
   const refreshCombinedBoard = () => {
@@ -334,14 +340,16 @@ function showPlan(plan, session) {
     results.querySelectorAll(`[data-option-group="${groupId}"]`).forEach((option) => {
       option.hidden = Number(option.dataset.optionIndex) !== nextOption;
     });
+    results.querySelectorAll(`[data-option-switch="${groupId}"]`).forEach((switcher) => {
+      switcher.dataset.optionCurrent = String(nextOption);
+      switcher.innerHTML = `Option ${nextOption + 1} of ${optionCount} <span aria-hidden="true">›</span>`;
+    });
     const [, universityIndex, category, groupIndex] = groupId.match(/^option-(\d+)-(required|recommended)-(\d+)$/) || [];
     const group = plan.plan?.course_board?.universities?.[Number(universityIndex)]?.[category]?.[Number(groupIndex)];
     if (group) {
       group.selected_option = nextOption;
       persistPlanner(plan);
     }
-    button.dataset.optionCurrent = String(nextOption);
-    button.innerHTML = `Option ${nextOption + 1} of ${optionCount} <span aria-hidden="true">›</span>`;
     refreshCombinedBoard();
     mountCompletedCourses(plan);
   };
@@ -459,7 +467,6 @@ function wirePlanChat(session, plan) {
     updateChatToolbar(session);
   });
   updateChatToolbar(session);
-  input.focus();
 }
 
 async function chat(event, session, plan) {
@@ -551,6 +558,8 @@ async function renderPlanner() {
 const selectedService = new URLSearchParams(window.location.search).get("service");
 document.body.classList.toggle("chatbot-view", selectedService === "chat");
 document.body.classList.toggle("home-view", !selectedService);
+document.body.classList.toggle("planner-view", selectedService === "transfer");
+document.body.classList.toggle("events-view", selectedService === "compass");
 document.querySelectorAll(".primary-nav a[data-service]").forEach((link) => {
   if (link.dataset.service === selectedService) link.setAttribute("aria-current", "page");
 });

@@ -6,8 +6,16 @@ body{background-size:140% 140%;animation:guideGradient 22s ease-in-out infinite 
 .site-brand-name{color:var(--ink);font-family:var(--font);font-size:1rem;font-weight:700;line-height:1.1;letter-spacing:0}
 @media(max-width:760px){.site-brand-mark{width:38px;height:38px}.site-brand-name{font-size:1rem}}
 .topbar{border-color:var(--border)}
+body.planner-view .content,body.events-view .content{overflow:visible}
+body.planner-view .topbar,body.events-view .topbar{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--page-bg) 88%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
 .page{margin-top:34px}
 .hero h1{font-family:var(--display);font-weight:600;letter-spacing:-.035em}
+.hero .typing-headline{display:inline-flex;align-items:baseline;min-height:1.08em;margin:8px 0;white-space:normal}
+.hero>.eyebrow{margin:0 0 6px;color:var(--primary);font-size:.72rem;font-weight:700;letter-spacing:0;text-transform:uppercase}
+.hero>.eyebrow::before{content:"✦";margin-right:5px;font-size:.85em}
+.typing-text{display:inline-block}
+.typing-cursor{display:inline-block;flex:none;width:3px;height:.88em;margin-left:3px;border-radius:999px;background:var(--primary);transform:translateY(.08em);animation:typingCursor .72s step-end infinite}
+@keyframes typingCursor{50%{opacity:0}}
 .hero p{color:var(--muted)}
 .page:not(.chatbot-page)>*{animation:pageEnter .42s cubic-bezier(.2,.75,.25,1) both}
 @keyframes pageEnter{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:translateY(0)}}
