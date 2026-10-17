@@ -68,7 +68,7 @@ window.addEventListener("message", (event) => {
 });
 
 function pageTemplate(content) {
-  app.innerHTML = `<div class="hero"><h1>Let's make College Easier</h1><p>Choose your colleges and goals. Find courses that move you forward.</p></div>${content}`;
+  app.innerHTML = `<div class="hero"><h1>Let's make College Easier</h1></div>${content}`;
 }
 
 function options(items) {
