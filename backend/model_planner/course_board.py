@@ -41,12 +41,74 @@ def _text_from_template_assets(payload: dict[str, Any]) -> str:
 
 
 def _choice_groups_from_agreement(payload: dict[str, Any]) -> list[dict[str, Any]]:
-    """Read Assist's explicit "complete N following" advisements as alternatives."""
+    """Read Assist's explicit one-of instructions as switchable alternatives."""
     groups = []
+
+    def cells_for_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        cells = []
+        for row in rows:
+            for cell in row.get("cells", []) or []:
+                cell_id = str(cell["id"]) if cell.get("id") is not None else None
+                course = cell.get("course") or {}
+                series_courses = (cell.get("series") or {}).get("courses") or []
+                targets = series_courses or ([course] if course else [])
+                codes = [
+                    f"{target.get('prefix', '').strip()} {target.get('courseNumber', '').strip()}".strip()
+                    for target in targets
+                ]
+                if cell_id or any(codes):
+                    cells.append({"id": cell_id, "codes": [code for code in codes if code]})
+        return cells
+
+    def section_label(section: dict[str, Any], index: int) -> str:
+        for key in ("label", "letter", "name", "title"):
+            value = section.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return f"{chr(ord('A') + index)}" if index < 26 else f"{index + 1}"
+
     for asset_index, asset in enumerate(_json_list(payload.get("templateAssets", []))):
         if not isinstance(asset, dict) or asset.get("type") != "RequirementGroup":
             continue
+        sections = [section for section in (asset.get("sections", []) or []) if isinstance(section, dict)]
+
+        # Some Assist agreements put “complete 1 sequence from A, B, ...” on
+        # the RequirementGroup itself. In that shape, each sibling section is
+        # one alternative and every course row within that section is required.
+        instruction = asset.get("instruction") or {}
+        is_sequence_choice = False
+        if isinstance(instruction, dict) and instruction.get("type") == "NFromConjunction":
+            conjunction = str(instruction.get("conjunction", "")).casefold()
+            selection = str(instruction.get("selectionType", "")).casefold()
+            try:
+                amount = float(instruction.get("amount", 0))
+            except (TypeError, ValueError):
+                amount = 0
+            if conjunction == "or" and amount == 1 and selection in {"", "complete"}:
+                options = []
+                labels = []
+                for section_index, section in enumerate(sections):
+                    cells = cells_for_rows(section.get("rows", []) or [])
+                    if cells:
+                        options.append(cells)
+                        labels.append(section_label(section, section_index))
+                if len(options) > 1:
+                    is_sequence_choice = True
+                    groups.append({
+                        "id": f"{asset_index}:sequence",
+                        "kind": "sequence",
+                        "options": options,
+                        "option_labels": labels,
+                    })
+
+        # Nested section advisements belong to the parent sequence, so do not
+        # turn them into additional top-level cards beside the sequence card.
+        if is_sequence_choice:
+            continue
+
         for section_index, section in enumerate(asset.get("sections", []) or []):
+            if not isinstance(section, dict):
+                continue
             for advisement_index, advisement in enumerate(section.get("advisements", []) or []):
                 if not isinstance(advisement, dict) or advisement.get("type") != "NFollowing":
                     continue
@@ -59,18 +121,7 @@ def _choice_groups_from_agreement(payload: dict[str, Any]) -> list[dict[str, Any
                     continue
                 options = []
                 for row in section.get("rows", []) or []:
-                    cells = []
-                    for cell in row.get("cells", []) or []:
-                        cell_id = str(cell["id"]) if cell.get("id") is not None else None
-                        course = cell.get("course") or {}
-                        series_courses = (cell.get("series") or {}).get("courses") or []
-                        targets = series_courses or ([course] if course else [])
-                        codes = [
-                            f"{target.get('prefix', '').strip()} {target.get('courseNumber', '').strip()}".strip()
-                            for target in targets
-                        ]
-                        if cell_id or any(codes):
-                            cells.append({"id": cell_id, "codes": [code for code in codes if code]})
+                    cells = cells_for_rows([row])
                     if cells:
                         options.append(cells)
                 if options:
@@ -378,7 +429,7 @@ def _build_university_plans(
                     if any(course.get("code") for course in definition.get("target_courses", []))
                 }
                 supported_rows = []
-                for row_cells in choice_group["options"]:
+                for choice_index, row_cells in enumerate(choice_group["options"]):
                     row_defs = []
                     for cell in row_cells:
                         definition = definitions.get(keys_by_cell.get(cell.get("id"))) if cell.get("id") else None
@@ -388,7 +439,7 @@ def _build_university_plans(
                         if definition is not None:
                             row_defs.append(definition)
                     if len(row_defs) == len(row_cells) and all(item.get("options") for item in row_defs):
-                        supported_rows.append((row_cells, row_defs))
+                        supported_rows.append((choice_index, row_cells, row_defs))
                 options_by_source[source_id] = supported_rows
 
             supported_sources = [source_id for source_id in source_ids if options_by_source[source_id]]
@@ -401,7 +452,7 @@ def _build_university_plans(
 
             choices = []
             choice_definitions = []
-            for row_cells, row_defs in options_by_source[selected_source]:
+            for choice_index, row_cells, row_defs in options_by_source[selected_source]:
                 row_target_codes = []
                 for definition in row_defs:
                     choice_definitions.append(definition)
@@ -424,7 +475,12 @@ def _build_university_plans(
                     "label": f"Option {index + 1} of {len(row_combinations)}",
                 } for index, combination in enumerate(row_combinations)]
                 choices.append({
-                    "target_course": " + ".join(dict.fromkeys(row_target_codes)),
+                    "target_course": (
+                        f"Sequence {choice_group['option_labels'][choice_index]}"
+                        if choice_group.get("kind") == "sequence"
+                        and choice_index < len(choice_group.get("option_labels", []))
+                        else " + ".join(dict.fromkeys(row_target_codes))
+                    ),
                     "options": row_combinations,
                 })
 
@@ -449,7 +505,11 @@ def _build_university_plans(
                 "choices": choices,
                 # The first Assist course choice is the initial selection.
                 "options": choices[0]["options"],
-                "selection_note": "Complete 1 course or combination from the following; choose one option.",
+                "selection_note": (
+                    "Complete 1 sequence from the following; choose one option."
+                    if choice_group.get("kind") == "sequence"
+                    else "Complete 1 course or combination from the following; choose one option."
+                ),
                 "fallback_note": fallback_note,
                 "policy_note": "Regular and honors courses may be combined to complete this series." if any(item.get("honors_combination_allowed") for item in choice_definitions) else None,
                 "assist_url": _build_assist_url(selected_agreement.get("year_id", requested_year_id), selected_source, target_id, selected_agreement["document_key"]),
