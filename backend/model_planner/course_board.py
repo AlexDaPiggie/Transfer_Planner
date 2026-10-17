@@ -123,7 +123,11 @@ def _sending_options(articulation: dict[str, Any]) -> tuple[list[dict[str, Any]]
             })
         if courses:
             conjunction = (group.get("courseConjunction") or "And").lower()
-            options.append({"courses": courses, "is_series": conjunction == "and" and len(courses) > 1})
+            options.append({
+                "courses": courses,
+                "conjunction": "or" if conjunction == "or" else "and",
+                "is_series": conjunction == "and" and len(courses) > 1,
+            })
     return options, sending.get("noArticulationReason")
 
 
@@ -165,6 +169,7 @@ def _requirements_from_agreement(agreement: dict[str, Any]) -> dict[str, dict[st
         requirements[target_code] = {
             "target_code": target_code,
             "target_title": target_title,
+            "target_is_series": bool(articulation.get("series")),
             "category": category,
             "options": options,
             "no_articulation_reason": no_articulation_reason,
@@ -178,22 +183,126 @@ def _choose_option(options: list[dict[str, Any]]) -> dict[str, Any] | None:
     return options[0] if options else None
 
 
-def _option_series_families(options: list[dict[str, Any]]) -> set[str]:
-    """Return source-course series families, such as ``BIOL 6``."""
-    return {
-        parts[0]
-        for option in options
-        for course in option["courses"]
-        if (parts := _series_course_parts(course["code"]))
-    }
-
-
 def _course_stage_key(course: dict[str, Any]) -> tuple[str, str, bool]:
     """Group BIOL 6A and BIOL 6AH as the same displayed course stage."""
     parts = _series_course_parts(course["code"])
     if parts:
         return parts[0], parts[1], parts[2]
     return course["code"].upper(), "", False
+
+
+def _build_university_plans(
+    by_goal: dict[tuple[int, str], list[dict[str, Any]]],
+    parsed: dict[tuple[int, int, str], dict[str, dict[str, Any]]],
+    source_ids: list[int],
+    main_source_id: int,
+    source_position: dict[int, int],
+    source_support: dict[int, int],
+    requested_year_id: int,
+) -> list[dict[str, Any]]:
+    """Build one three-category board per selected university and major."""
+    plans = []
+    for (target_id, major), agreements in by_goal.items():
+        agreement_by_source = {item["source_id"]: item for item in agreements}
+        first = agreements[0]
+        requirement_keys = set().union(*(
+            parsed[(item["source_id"], item["target_id"], item["major"])].keys()
+            for item in agreements
+        ))
+        requirements = {}
+
+        for requirement_key in requirement_keys:
+            per_source = {
+                source_id: parsed.get((source_id, target_id, major), {}).get(requirement_key, {})
+                for source_id in source_ids
+            }
+            definition = next((entry for entry in per_source.values() if entry), {})
+            category = definition.get("category", "other")
+            articulated = any(entry.get("options") for entry in per_source.values())
+            requirements[requirement_key] = {
+                "key": requirement_key,
+                "per_source": per_source,
+                "definition": definition,
+                "category": category,
+                "articulated": articulated,
+            }
+
+        university = {
+            "target_id": target_id,
+            "university": first["target_name"],
+            "major": major,
+            "assist_url": None,
+            "required": [],
+            "recommended": [],
+            "not_articulated": [],
+        }
+
+        for key, item in requirements.items():
+            definition = item["definition"]
+            label = f"{first['target_name']} — {major}"
+            if item["category"] == "other":
+                continue
+            if not item["articulated"]:
+                university["not_articulated"].append({
+                    "target_course": definition.get("target_code") or key,
+                    "target_title": definition.get("target_title") or definition.get("target_code") or key,
+                    "reason": definition.get("no_articulation_reason") or "No selected community college has an articulated course for this university requirement.",
+                    "goal_label": label,
+                })
+                continue
+
+            candidates = [source_id for source_id in source_ids if item["per_source"].get(source_id, {}).get("options")]
+            if not candidates:
+                university["not_articulated"].append({
+                    "target_course": definition.get("target_code") or key,
+                    "target_title": definition.get("target_title") or definition.get("target_code") or key,
+                    "reason": "No selected community college has an articulated course for this university requirement.",
+                    "goal_label": label,
+                })
+                continue
+            selected_source = main_source_id if main_source_id in candidates else max(
+                candidates,
+                key=lambda source_id: (source_support[source_id], -source_position[source_id]),
+            )
+            selected_agreement = agreement_by_source.get(selected_source)
+            if not selected_agreement:
+                continue
+            options = []
+            for option_index, option in enumerate(item["per_source"][selected_source].get("options", [])):
+                options.append({
+                    "courses": option["courses"],
+                    "conjunction": option.get("conjunction", "and"),
+                    "is_series": option["is_series"],
+                    "label": f"Option {option_index + 1} of {len(item['per_source'][selected_source]['options'])}",
+                })
+            fallback_note = None
+            if selected_source != main_source_id and not item["per_source"].get(main_source_id, {}).get("options") and (
+                definition.get("target_is_series") or any(option["is_series"] for option in options)
+            ):
+                fallback_note = (
+                    f"{agreement_by_source.get(main_source_id, {}).get('source_name', 'Your main college')} does not "
+                    f"articulate {definition.get('target_code', key)} as a complete series required by "
+                    f"{first['target_name']} — {major}. Take the full course group at {selected_agreement['source_name']} instead."
+                )
+            group = {
+                "target_course": definition.get("target_code") or key,
+                "target_title": definition.get("target_title") or definition.get("target_code") or key,
+                "source_id": selected_source,
+                "source_name": selected_agreement["source_name"],
+                "is_main_college": selected_source == main_source_id,
+                "options": options,
+                "fallback_note": fallback_note,
+                "policy_note": "Regular and honors courses may be combined to complete this series." if definition.get("honors_combination_allowed") else None,
+                "assist_url": _build_assist_url(selected_agreement.get("year_id", requested_year_id), selected_source, target_id, selected_agreement["document_key"]),
+            }
+            if not university["assist_url"]:
+                university["assist_url"] = group["assist_url"]
+            university[item["category"]].append(group)
+
+        for category in ("required", "recommended", "not_articulated"):
+            university[category].sort(key=lambda group: group["target_course"].casefold())
+        plans.append(university)
+    return plans
 
 
 def build_course_board(
@@ -242,7 +351,6 @@ def build_course_board(
             for item in goal_agreements
         ))
         requirement_data: dict[str, dict[str, Any]] = {}
-        series_groups: dict[str, list[str]] = defaultdict(list)
         for requirement_key in requirement_keys:
             per_source = {
                 item["source_id"]: parsed[(item["source_id"], item["target_id"], item["major"])].get(requirement_key, {})
@@ -269,62 +377,14 @@ def build_course_board(
                 }
             if category == "other":
                 continue
-            families = set().union(*(
-                _option_series_families(item.get("options", []))
-                for item in per_source.values()
-                if item
-            ))
-            series_family = next(iter(families)) if len(families) == 1 else None
             requirement_data[requirement_key] = {
                 "per_source": per_source,
                 "definition": definition,
                 "category": category,
-                "series_family": series_family,
             }
-            if series_family:
-                series_groups[series_family].append(requirement_key)
 
         selected_by_requirement: dict[str, tuple[int, list[dict[str, Any]]]] = {}
         fallback_notes: dict[str, str] = {}
-        for series_family, keys in series_groups.items():
-            is_series = len(keys) > 1 or any(
-                any(option["is_series"] for option in requirement_data[key]["per_source"].get(source_id, {}).get("options", []))
-                for key in keys
-                for source_id in source_ids
-            )
-            if not is_series:
-                continue
-            complete_candidates = [
-                source_id for source_id in source_ids
-                if all(requirement_data[key]["per_source"].get(source_id, {}).get("options", []) for key in keys)
-            ]
-            if not complete_candidates:
-                continue
-            chosen_source_id = main_source_id if main_source_id in complete_candidates else max(
-                complete_candidates,
-                key=lambda source_id: (source_support[source_id], -source_position[source_id]),
-            )
-            for key in keys:
-                selected_by_requirement[key] = (
-                    chosen_source_id,
-                    requirement_data[key]["per_source"][chosen_source_id]["options"],
-                )
-            if chosen_source_id != main_source_id:
-                missing_courses = [
-                    requirement_data[key]["definition"].get("target_code", "a required course")
-                    for key in keys
-                    if not requirement_data[key]["per_source"].get(main_source_id, {}).get("options", [])
-                ]
-                if missing_courses:
-                    note = (
-                        f"{source_names.get(main_source_id, 'Your main college')} does not articulate "
-                        f"{' and '.join(missing_courses)} in the {series_family} series required by "
-                        f"{first_agreement['target_name']} — {major}. Take the full {series_family} series at "
-                        f"{source_names.get(chosen_source_id, f'Community college #{chosen_source_id}')} instead."
-                    )
-                    for key in keys:
-                        fallback_notes[key] = note
-
         for requirement_key, item_data in requirement_data.items():
             per_source = item_data["per_source"]
             definition = item_data["definition"]
@@ -345,7 +405,10 @@ def build_course_board(
 
             source_id, selected_options = selected
             agreement = next(item for item in goal_agreements if item["source_id"] == source_id)
-            for option in selected_options:
+            # Assist lists alternatives for the same receiving requirement as separate
+            # options. The pathway is a concrete course plan, so include only the first
+            # option here; the university board retains the option switcher.
+            for option in selected_options[:1]:
                 for course in option["courses"]:
                     family, stage, is_honors = _course_stage_key(course)
                     card_key = (source_id, family, stage)
@@ -370,6 +433,16 @@ def build_course_board(
                         card["fallback_notes"].add(fallback_notes[requirement_key])
                     if definition.get("honors_combination_allowed"):
                         card["policy_notes"].add("Regular and honors courses may be combined to complete this series.")
+
+    university_plans = _build_university_plans(
+        by_goal=by_goal,
+        parsed=parsed,
+        source_ids=source_ids,
+        main_source_id=main_source_id,
+        source_position=source_position,
+        source_support=source_support,
+        requested_year_id=requested_year_id,
+    )
 
     required_cards, recommended_cards = [], []
     for card in cards.values():
@@ -396,6 +469,7 @@ def build_course_board(
         "required": required_cards,
         "recommended": recommended_cards,
         "not_articulated": not_articulated,
+        "universities": university_plans,
         "legend": goal_labels,
         "footnotes": list(dict.fromkeys(footnotes)),
     }
