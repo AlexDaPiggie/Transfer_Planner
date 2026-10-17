@@ -1,8 +1,22 @@
 from typing import Dict, List, Optional
+import psycopg2
 from backend.deanza_chatbot.db import get_db
 from backend.deanza_chatbot.embed import embed_text
 from backend.deanza_chatbot.course_codes import resolve_code
 from backend.deanza_chatbot.schemas import SearchResult
+
+
+def _fetch_rows(query: str, params: tuple):
+    """Run a read query once more after a transient pooled-connection failure."""
+    for attempt in range(2):
+        try:
+            with get_db() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(query, params)
+                    return cur.fetchall()
+        except (psycopg2.OperationalError, psycopg2.InterfaceError):
+            if attempt == 1:
+                raise
 
 def _rrf_fuse(dense: List[dict], sparse: List[dict], k: int = 60) -> List[dict]:
     scores: Dict[int, float] = {}
@@ -26,87 +40,80 @@ def exact_course_lookup(code: str) -> Optional[dict]:
     """Look up exact course in the database (handles 'CIS 22A' and 'CIS D022A')."""
     import re
     norm_code = re.sub(r'([A-Za-z]+)\s*D0*(\d+[A-Za-z]*)', r'\1 \2', code).strip()
-    with get_db() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT id, chunk_text, metadata, source_url 
-                FROM chunks 
-                WHERE source_type = 'course' AND (
-                    metadata->>'code' = %s OR
-                    metadata->>'code' = %s OR
-                    metadata->'extra'->>'code' = %s OR
-                    doc_id = %s OR
-                    doc_id = %s
-                )
-                ORDER BY id LIMIT 1
-                """,
-                (
-                    code,
-                    norm_code,
-                    code,
-                    code.lower().replace(" ", "-"),
-                    norm_code.lower().replace(" ", "-"),
-                )
-            )
-            row = cur.fetchone()
-            if row:
-                return {
-                    "id": row["id"],
-                    "text": row["chunk_text"],
-                    "meta": row["metadata"],
-                    "url": row["source_url"],
-                    "score": 1.0,
-                }
+    rows = _fetch_rows(
+        """
+        SELECT id, chunk_text, metadata, source_url
+        FROM chunks
+        WHERE source_type = 'course' AND (
+            metadata->>'code' = %s OR
+            metadata->>'code' = %s OR
+            metadata->'extra'->>'code' = %s OR
+            doc_id = %s OR
+            doc_id = %s
+        )
+        ORDER BY id LIMIT 1
+        """,
+        (
+            code,
+            norm_code,
+            code,
+            code.lower().replace(" ", "-"),
+            norm_code.lower().replace(" ", "-"),
+        ),
+    )
+    if rows:
+        row = rows[0]
+        return {
+            "id": row["id"],
+            "text": row["chunk_text"],
+            "meta": row["metadata"],
+            "url": row["source_url"],
+            "score": 1.0,
+        }
     return None
 
 def dense_search(
     query_vec: List[float],
     limit: int = 30,
 ):
-    with get_db() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT id, chunk_text, metadata, source_url, 
-                1 - (embedding <=> %s::vector) AS sim
-                FROM chunks
-                ORDER BY embedding <=> %s::vector
-                LIMIT %s
-                """,
-                (query_vec, query_vec, limit)
-            )
-            return [
-                {"id": r["id"], "text": r["chunk_text"], "meta": r["metadata"], "url": r["source_url"]}
-                for r in cur.fetchall()
-            ]
+    rows = _fetch_rows(
+        """
+        SELECT id, chunk_text, metadata, source_url,
+        1 - (embedding <=> %s::vector) AS sim
+        FROM chunks
+        ORDER BY embedding <=> %s::vector
+        LIMIT %s
+        """,
+        (query_vec, query_vec, limit),
+    )
+    return [
+        {"id": row["id"], "text": row["chunk_text"], "meta": row["metadata"], "url": row["source_url"]}
+        for row in rows
+    ]
 
 def sparse_search(
     query: str,
     limit: int = 30
 ):
-    with get_db() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT id, chunk_text, metadata, source_url
-                FROM chunks
-                WHERE tsv@@ plainto_tsquery('english', %s)
-                ORDER BY ts_rank_cd(tsv, plainto_tsquery('english', %s)) DESC
-
-                LIMIT %s
-                """,
-                (query, query, limit)
-            )
-            return [
-                {
-                    "id": r["id"], 
-                    "text": r["chunk_text"],
-                    "meta": r["metadata"],
-                    "url": r["source_url"]
-                }
-                for r in cur.fetchall()
-            ]
+    rows = _fetch_rows(
+        """
+        SELECT id, chunk_text, metadata, source_url
+        FROM chunks
+        WHERE tsv@@ plainto_tsquery('english', %s)
+        ORDER BY ts_rank_cd(tsv, plainto_tsquery('english', %s)) DESC
+        LIMIT %s
+        """,
+        (query, query, limit),
+    )
+    return [
+        {
+            "id": row["id"],
+            "text": row["chunk_text"],
+            "meta": row["metadata"],
+            "url": row["source_url"],
+        }
+        for row in rows
+    ]
 
 def hybrid_search(
     query: str,

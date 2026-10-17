@@ -53,24 +53,27 @@ export async function streamChat({ message, history, onStatus, onToken, onDone, 
         const trimmed = evt.trim();
         if (!trimmed.startsWith("data: ")) continue;
 
+        let data;
         try {
-          const data = JSON.parse(trimmed.slice(6));
-          if (data.done) {
-            if (onDone) onDone();
-            return;
-          }
-          if (data.status && onStatus) {
-            onStatus(data.status);
-          }
-          if (data.text && onToken) {
-            onToken(data.text);
-          }
+          data = JSON.parse(trimmed.slice(6));
         } catch {
           // Some streams may send raw text instead of JSON.
           const rawToken = trimmed.slice(6);
           if (rawToken && rawToken !== "[DONE]" && onToken) {
             onToken(rawToken);
           }
+          continue;
+        }
+        if (data.error) throw new Error(data.error);
+        if (data.done) {
+          if (onDone) onDone();
+          return;
+        }
+        if (data.status && onStatus) {
+          onStatus(data.status);
+        }
+        if (data.text && onToken) {
+          onToken(data.text);
         }
       }
     }

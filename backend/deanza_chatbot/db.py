@@ -85,8 +85,15 @@ def get_db():
     conn = p.getconn()
     try: 
         yield conn
+    except (psycopg2.OperationalError, psycopg2.InterfaceError):
+        # Do not return a broken/stale socket to the pool. The next checkout
+        # will create a fresh connection in its place.
+        p.putconn(conn, close=True)
+        conn = None
+        raise
     finally:
-        p.putconn(conn)
+        if conn is not None:
+            p.putconn(conn)
 
 def sanitize_database_urls():
     """Replace stale legacy URLs (e.g. MyPortal) with modern active endpoints."""

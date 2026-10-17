@@ -1,5 +1,6 @@
 """Streaming API for the embedded De Anza College chatbot."""
 import json
+import logging
 
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
@@ -10,6 +11,7 @@ from backend.deanza_chatbot.schemas import ChatRequest
 
 
 router = APIRouter(tags=["De Anza Chat"])
+logger = logging.getLogger(__name__)
 
 
 @router.post("/api/deanza-chat")
@@ -25,10 +27,16 @@ async def deanza_chat_endpoint(req: ChatRequest, request: Request):
         )
 
     async def event_generator():
-        async for item in stream_chat(req.message, [message.model_dump() for message in req.history]):
-            payload = item if isinstance(item, dict) else {"text": item}
-            yield f"data: {json.dumps(payload)}\n\n"
-        yield f"data: {json.dumps({'done': True})}\n\n"
+        try:
+            async for item in stream_chat(req.message, [message.model_dump() for message in req.history]):
+                payload = item if isinstance(item, dict) else {"text": item}
+                yield f"data: {json.dumps(payload)}\n\n"
+        except Exception:
+            logger.exception("De Anza chatbot stream failed")
+            error = {"error": "The chatbot could not reach its information service. Please try again."}
+            yield f"data: {json.dumps(error)}\n\n"
+        else:
+            yield f"data: {json.dumps({'done': True})}\n\n"
 
     return StreamingResponse(
         event_generator(),
