@@ -2,6 +2,7 @@ import { escapeHtml } from "./ui.js";
 import { API_BASE } from "./config.js";
 import { interestChoices } from "./interest_categories.js";
 import { RANGE_OPTIONS, PRIORITIES, priorityTier, filterEvents, mapGroups, isTransferEvent } from "./compass_events.js";
+import { startTypingHeadline, typingHeadlineMarkup } from "./typing_headline.js";
 
 // Use the same host as the session cookie used by auth.js.
 const apiBase = `${API_BASE}/api/compass`;
@@ -42,13 +43,17 @@ for (const [key, endpoint, label] of [["confirm", "confirm-email", "Confirm dail
 export function renderServiceHome(app) {
   app.innerHTML = `
     <section class="hero home-hero" aria-labelledby="home-title">
-      <h1 id="home-title">Let's make College Easier</h1>
+      <p class="eyebrow">De Anza Guide</p>
+      ${typingHeadlineMarkup("Let's make College Easier")}
     </section>
     <section class="service-grid" aria-label="De Anza Guide services">
         <article class="card service-card planner-service"><span class="service-card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21V5.5Z"/><path d="M4 6h13M8 10h8m-8 4h6"/></svg></span><span class="service-eyebrow">Transfer Planner</span><p>Build a transfer plan with verified ASSIST courses.</p><a class="primary" href="?service=transfer">Plan your transfer <span aria-hidden="true">→</span></a></article>
         <article class="card service-card events-service"><span class="service-card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="16" rx="3"/><path d="M7.5 3v4m9-4v4M4 9h16m-12 4h3m-3 4h7"/></svg></span><span class="service-eyebrow">De Anza Events</span><p>Find campus events, workshops, and key dates.</p><a class="primary" href="?service=compass">Explore events <span aria-hidden="true">→</span></a></article>
         <article class="card service-card chat-service"><span class="service-card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M20 11.5a7.5 7.5 0 0 1-8 7.5 8.7 8.7 0 0 1-3.7-.8L4 20l1.2-3.7A7.1 7.1 0 0 1 4 12c0-4.1 3.6-7.5 8-7.5s8 3.1 8 7Z"/><path d="M8 12h.01M12 12h.01M16 12h.01"/></svg></span><span class="service-eyebrow">De Anza Chatbot</span><p>Get answers about courses, deadlines, and campus services.</p><a class="primary" href="?service=chat">Ask De Anza <span aria-hidden="true">→</span></a></article>
     </section>`;
+  const homeHeadline = app.querySelector(".typing-headline");
+  homeHeadline.id = "home-title";
+  startTypingHeadline(homeHeadline);
 }
 
 export function renderChatbot(app) {
@@ -80,7 +85,8 @@ function safeUrl(value) {
 export async function renderCompass(app) {
   app.classList.add("compass-page");
   app.closest(".content")?.classList.add("compass-content");
-  app.innerHTML = `<div class="hero"><p class="service-eyebrow">DE ANZA EVENTS</p><h1>Find your next opportunity</h1><p>De Anza events and deadlines, shaped around you.</p></div><div class="compass-layout"><form class="card compass-profile" id="compass-profile"><h2>Your student profile</h2><label>Major<select name="major" aria-label="Major"></select></label><fieldset class="compass-interests"><legend>What are you looking for?</legend><div class="compass-interest-options" id="compass-interest-options"></div></fieldset><button class="primary" type="submit" disabled>Save and recommend</button><p id="compass-profile-status" class="compass-status" role="status">Log in to save your profile and personalize events.</p></form><section aria-label="De Anza events"><div id="compass-map" class="compass-map" aria-label="Map of De Anza events"></div><p id="compass-status" class="compass-status" role="status">Loading campus events…</p><div id="compass-events" class="compass-events"></div></section></div>`;
+  app.innerHTML = `<div class="hero"><p class="eyebrow">De Anza Guide</p>${typingHeadlineMarkup("Find your next opportunity")}<p>De Anza events and deadlines, shaped around you.</p></div><div class="compass-layout"><form class="card compass-profile" id="compass-profile"><h2>Your student profile</h2><label>Major<select name="major" aria-label="Major"></select></label><fieldset class="compass-interests"><legend>What are you looking for?</legend><div class="compass-interest-options" id="compass-interest-options"></div></fieldset><button class="primary" type="submit" disabled>Save and recommend</button><p id="compass-profile-status" class="compass-status" role="status">Log in to save your profile and personalize events.</p></form><section aria-label="De Anza events"><div id="compass-map" class="compass-map" aria-label="Map of De Anza events"></div><p id="compass-status" class="compass-status" role="status">Loading campus events…</p><div id="compass-events" class="compass-events"></div></section></div>`;
+  startTypingHeadline(app.querySelector(".typing-headline"));
   const form = app.querySelector("form");
   const sidebar = document.createElement("div");
   form.replaceWith(sidebar); sidebar.append(form);

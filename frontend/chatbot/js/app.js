@@ -13,6 +13,7 @@ import {
 
 const chatContainer = document.getElementById("chat-container");
 const scrollContainer = document.querySelector(".content-shell");
+const guideTopbar = document.querySelector(".guide-topbar");
 const inputForm = document.getElementById("input-form");
 const inputBox = document.getElementById("input-box");
 const sendBtn = document.getElementById("send-btn");
@@ -389,6 +390,9 @@ window.addEventListener("resize", () => {
 function initScrollTracking() {
   if (!scrollContainer) return;
 
+  const updateTopbar = () => guideTopbar?.classList.toggle("is-scrolled", scrollContainer.scrollTop > 8);
+  updateTopbar();
+
   // Instantly catch user scrolling up with mouse wheel or trackpad
   scrollContainer.addEventListener("wheel", (e) => {
     if (e.deltaY < -4) {
@@ -415,6 +419,7 @@ function initScrollTracking() {
 
   // Monitor scroll position to resume auto-scroll when user reaches bottom
   scrollContainer.addEventListener("scroll", () => {
+    updateTopbar();
     if (scrollTopBtn) {
       scrollTopBtn.classList.toggle("visible", scrollContainer.scrollTop > 360);
     }
