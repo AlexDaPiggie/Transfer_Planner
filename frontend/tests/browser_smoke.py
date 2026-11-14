@@ -22,7 +22,7 @@ def main(services_only=False):
     threading.Thread(target=server.serve_forever, daemon=True).start()
     output = ROOT / "scratch" / "integration-preview"
     output.mkdir(parents=True, exist_ok=True)
-    state = {"user": None, "completed": [], "completion_writes": 0}
+    state = {"user": None, "completed": [], "completion_writes": 0, "catalog_available": True}
     errors = []
 
     def respond(route):
@@ -52,6 +52,13 @@ def main(services_only=False):
             data = {"courses": state["completed"]}
         elif path == "/api/catalog/sources":
             data = [{"id": 113, "name": "De Anza College"}]
+            if not state["catalog_available"]:
+                code = 503
+                data = {"detail": "School data is temporarily unavailable. Please try again."}
+        elif path == "/api/catalog/targets":
+            data = [{"id": 7, "name": "University of California, Irvine"}]
+        elif path == "/api/catalog/majors":
+            data = [{"name": "Computer Science"}]
         else:
             raise AssertionError(f"Unexpected API request: {req.method} {path}")
         route.fulfill(status=code, json=data, headers={"Access-Control-Allow-Origin": req.headers.get("origin", "*"), "Access-Control-Allow-Credentials": "true", "Access-Control-Allow-Headers": "content-type,x-pathway-request", "Access-Control-Allow-Methods": "GET,POST,PUT,OPTIONS"})
@@ -96,10 +103,30 @@ def main(services_only=False):
             page.locator("#auth-close").click()
             page.goto(base + "/?service=transfer")
             expect(page.locator("#college-search")).to_be_enabled()
+            state["catalog_available"] = False
+            page.reload()
+            expect(page.locator("#college-search")).to_have_attribute("placeholder", "College list unavailable")
+            expect(page.get_by_role("alert")).to_contain_text("School data is temporarily unavailable")
+            state["catalog_available"] = True
+            page.get_by_role("button", name="Retry loading school data").click()
+            expect(page.locator("#college-search")).to_be_enabled()
+            page.locator("#college-search").fill("De Anza")
+            page.locator('[data-college-id="113"]').click()
+            expect(page.locator("#university-search")).to_be_enabled()
+            page.locator("#university-search").fill("Irvine")
+            page.locator("#university-suggestions button").click()
+            expect(page.locator("#major-search")).to_be_enabled()
+            page.locator("#major-search").fill("Computer")
+            expect(page.locator("#major-search")).to_have_value("Computer")
+            expect(page.locator("#university-search")).to_have_value("University of California, Irvine")
+            expect(page.locator("#major-suggestions")).to_contain_text("Computer Science")
+            page.evaluate("localStorage.clear()")
+            page.reload()
+            expect(page.locator("#college-search")).to_be_enabled()
             if services_only:
                 assert not errors, errors
                 browser.close()
-                print(json.dumps({"browser": "passed", "checks": ["two services", "retired service fallback", "login and logout", "chatbot navigation", "mobile width", "login and signup without email recovery", "planner loads"]}))
+                print(json.dumps({"browser": "passed", "checks": ["two services", "retired service fallback", "login and logout", "chatbot navigation", "mobile width", "login and signup without email recovery", "database outage and retry", "college, university and major typing"]}))
                 return
             expect(page.get_by_role("heading", name="1. Community colleges")).to_be_visible()
             expect(page.locator("#college-search")).to_be_enabled()

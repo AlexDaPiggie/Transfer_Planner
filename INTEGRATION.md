@@ -21,6 +21,19 @@ FastAPI serves the frontend and chatbot at its root. For hosting, set
 `PATHWAY_PUBLIC_URL`, `PATHWAY_ALLOWED_ORIGINS`, `PATHWAY_ENV=production` and a
 persistent `PATHWAY_SESSION_SECRET` for the HTTPS domain. Keep `.env.local` private.
 
+On Render, set `DATABASE_URL` in the web service's Environment settings to the
+active Planner PostgreSQL connection URL. Local `.env` files are ignored by Git
+and are not deployed. Set `DEANZA_CHAT_DATABASE_URL` separately for the chatbot;
+it is not a replacement for the Planner database. Redeploy after configuration
+changes. A healthy `/api/health` response confirms the process is running, not
+that its database is reachable: also verify `/api/catalog/sources?year_id=77`.
+
+The catalog returns 503 with `database_not_configured` when `DATABASE_URL` is
+missing, or `database_unavailable` when the database rejects the connection.
+Server logs distinguish missing settings from a connection or missing-cluster
+error without printing credentials. Restore the database connection, then use
+the Planner's retry button to reload school choices without clearing saved plans.
+
 ## Accounts
 
 Authentication uses `/api/auth`; completed courses use `/api/completed-courses`.

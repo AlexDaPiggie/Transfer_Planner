@@ -7,6 +7,9 @@ from dotenv import load_dotenv
 DB_PATH = "transfer.db"
 load_dotenv()
 
+class DatabaseConfigurationError(RuntimeError):
+    """The database URL is missing from the deployment environment."""
+
 def normalize_database_url(db_url: str) -> str:
     """Remove accidental quotes around URL option values from environment files."""
     return re.sub(r"(sslmode=)[\"']?([^&\s\"']+)[\"']?", r"\1\2", db_url).strip()
@@ -16,7 +19,7 @@ def get_db_connection():
     db_url = os.getenv("DATABASE_URL")
     #in case the url of the database platform is not provided
     if not db_url:
-        raise ValueError("Missing DATABASE_URL in .env file")
+        raise DatabaseConfigurationError("DATABASE_URL is not configured")
     db_url = normalize_database_url(db_url)
     cert_path = "/root/.postgresql/root.crt"
     if os.path.exists(cert_path):

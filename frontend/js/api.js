@@ -4,8 +4,13 @@ export const ACTIVE_YEAR_ID = 77;
 
 async function ensureOk(response) {
   if (response.ok) return response.json();
-  let message = "The service could not complete that request.";
-  try { message = (await response.json()).detail || message; } catch { /* Use the default message. */ }
+  let message = response.status >= 500
+    ? "The service is temporarily unavailable. Please try again."
+    : "The service could not complete that request.";
+  try {
+    const detail = (await response.json()).detail;
+    if (typeof detail === "string") message = detail;
+  } catch { /* Use the default message. */ }
   throw new Error(message);
 }
 
@@ -13,7 +18,7 @@ async function request(url, options) {
   try { return await fetch(url, options); }
   catch (error) {
     if (error.name === "AbortError") throw error;
-    throw new Error("The local backend is not running. Keep the PowerShell launcher open, then check frontend/.local-api-error.log.");
+    throw new Error("Could not reach the service. Please check your connection and try again.");
   }
 }
 

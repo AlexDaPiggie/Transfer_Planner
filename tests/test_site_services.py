@@ -1,10 +1,12 @@
 """Verify retired endpoints and the shared account/site features they used."""
 import pytest
+import psycopg2
 from fastapi.testclient import TestClient
 from starlette.requests import Request
 
 from backend.model_planner import auth
 from backend.model_planner.main import app
+from backend.model_planner import main as main_module
 
 
 @pytest.mark.parametrize("path", [
@@ -47,3 +49,27 @@ def test_email_recovery_endpoints_are_unavailable(path):
     with TestClient(app) as client:
         assert client.post(path, json={"email": "test@example.invalid"}).status_code == 404
         assert path not in client.get("/openapi.json").json()["paths"]
+
+
+def test_missing_database_config_returns_actionable_service_error(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    with TestClient(app) as client:
+        response = client.get("/api/catalog/sources", headers={"origin": "http://localhost:8080"})
+    assert response.status_code == 503
+    assert response.json()["code"] == "database_not_configured"
+    assert response.headers["access-control-allow-origin"] == "http://localhost:8080"
+
+
+def test_database_connection_error_does_not_expose_connection_details(monkeypatch, caplog):
+    def unavailable():
+        raise psycopg2.OperationalError("cluster secret-cluster not found; password=private-value")
+
+    monkeypatch.setattr(main_module, "get_db_connection", unavailable)
+    with TestClient(app) as client:
+        response = client.get("/api/catalog/sources")
+    assert response.status_code == 503
+    assert response.json()["code"] == "database_unavailable"
+    assert "cluster_not_found" in caplog.text
+    for private in ("secret-cluster", "private-value"):
+        assert private not in response.text
+        assert private not in caplog.text

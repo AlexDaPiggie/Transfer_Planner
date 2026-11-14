@@ -1,9 +1,12 @@
 """FastAPI boundary between the browser, verified agreement data, and AI models."""
 import json
+import logging
+import psycopg2
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from backend.frontend_files import FrontendFiles
@@ -15,7 +18,7 @@ from backend.model_planner.transfer_plan import build_assist_url, build_transfer
 from models.src.explainer import answer_student_question, generate_student_summary
 from models.src.planner import generate_technical_plan
 from models.src.schemas import ChatInput, StudentSummaryInput, TechnicalPlanInput
-from scraper.sync_db import get_db_connection
+from scraper.sync_db import DatabaseConfigurationError, get_db_connection
 
 from dotenv import load_dotenv
 from starlette.middleware.sessions import SessionMiddleware
@@ -28,6 +31,29 @@ load_dotenv(PROJECT_ROOT / ".env.local", override=True)
 
 
 app = FastAPI(title="De Anza Guide", version="2.1.0")
+logger = logging.getLogger(__name__)
+
+
+@app.exception_handler(DatabaseConfigurationError)
+async def database_not_configured(request, exc):
+    logger.error("DATABASE_URL is not configured in the deployment environment.")
+    return JSONResponse(status_code=503, content={
+        "detail": "School data is unavailable. Please try again later.",
+        "code": "database_not_configured",
+    })
+
+
+@app.exception_handler(psycopg2.OperationalError)
+async def database_unavailable(request, exc):
+    # Driver messages can contain connection details; log only a known category.
+    reason = "cluster_not_found" if "cluster" in str(exc).lower() and "not found" in str(exc).lower() else "connection_failed"
+    logger.error("Database connection unavailable (reason=%s). Check DATABASE_URL and database availability.", reason)
+    return JSONResponse(status_code=503, content={
+        "detail": "School data is temporarily unavailable. Please try again.",
+        "code": "database_unavailable",
+    })
+
+
 auth_secret = os.getenv("PATHWAY_SESSION_SECRET")
 if not auth_secret:
     if os.getenv("PATHWAY_ENV") == "production":

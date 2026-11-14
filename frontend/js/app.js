@@ -190,8 +190,21 @@ function updatePlanButton() {
   document.querySelector("#generate").disabled = !plannerState.colleges.length || !plannerState.goals.length;
 }
 
-function showPlannerError(error) {
-  document.querySelector("#results").innerHTML = `<p class="notice">${escapeHtml(error.message)}</p>`;
+function showPlannerError(error, retry = null) {
+  const results = document.querySelector("#results");
+  results.innerHTML = `<div class="notice" role="alert"><p>${escapeHtml(error.message)}</p></div>`;
+  if (retry) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "secondary";
+    button.textContent = "Retry loading school data";
+    button.addEventListener("click", () => {
+      button.disabled = true;
+      results.replaceChildren();
+      retry();
+    }, { once: true });
+    results.firstElementChild.append(button);
+  }
 }
 
 async function refreshUniversityChoices() {
@@ -224,7 +237,7 @@ async function refreshUniversityChoices() {
     universityInput.disabled = !plannerState.targetCatalog.length;
     universityInput.placeholder = plannerState.targetCatalog.length ? "Type a university name" : "No saved university agreements";
   } catch (error) {
-    showPlannerError(error);
+    showPlannerError(error, refreshUniversityChoices);
     universityInput.placeholder = "Could not load universities";
   }
 }
@@ -244,6 +257,9 @@ async function refreshMajorChoices() {
     major.placeholder = "Choose a university first";
     return;
   }
+  // Selecting a suggestion already loads this school's majors. The input's
+  // later native change event must not disable/reset the major being typed.
+  if (plannerState.selectedTargetId === university.id && plannerState.majorCatalog.length) return;
   plannerState.selectedTargetId = university.id;
   plannerState.goalType = plannerState.goals.some((goal) => goal.target_id === university.id) ? "alternate" : "primary";
   plannerState.pendingMajor = null;
@@ -261,7 +277,8 @@ async function refreshMajorChoices() {
     major.disabled = !majors.length;
     major.placeholder = majors.length ? "Search for a major" : "No saved majors";
   } catch (error) {
-    showPlannerError(error);
+    major.placeholder = "Could not load majors";
+    showPlannerError(error, refreshMajorChoices);
   }
 }
 
@@ -588,9 +605,11 @@ async function renderPlanner() {
   });
   document.querySelector("#add-major").addEventListener("click", addGoal);
   document.querySelector("#generate").addEventListener("click", loadPlan);
+  collegeInput.placeholder = "Loading colleges…";
   try {
     plannerState.sourceCatalog = await getSources(APP_CONFIG);
     collegeInput.disabled = false;
+    collegeInput.placeholder = "Type a college name";
     plannerState.colleges = plannerState.colleges
       .map((college) => plannerState.sourceCatalog.find((item) => item.id === college.id))
       .filter(Boolean);
@@ -608,7 +627,9 @@ async function renderPlanner() {
       showPlan(savedPlanner.plan.data, session);
     }
   } catch (error) {
-    showPlannerError(error);
+    collegeInput.placeholder = "College list unavailable";
+    document.querySelector("#college-message").textContent = "The college list could not be loaded. Retry loading school data below.";
+    showPlannerError(error, renderPlanner);
   }
 }
 
