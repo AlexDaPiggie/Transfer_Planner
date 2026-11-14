@@ -64,7 +64,7 @@ function Test-LocalBackend {
         $health = Invoke-RestMethod -Uri "$apiUrl/api/health" -TimeoutSec 2
         $openApi = Invoke-RestMethod -Uri "$apiUrl/openapi.json" -TimeoutSec 2
         $paths = $openApi.paths.PSObject.Properties.Name
-        return $health.status -eq "ok" -and $openApi.info.version -eq "2.1.0" -and $openApi.info.title -eq "De Anza Guide" -and $paths -contains "/api/compass/email-preferences" -and $paths -contains "/api/auth/reset-password"
+        return $health.status -eq "ok" -and $openApi.info.version -eq "2.1.0" -and $openApi.info.title -eq "De Anza Guide" -and $paths -notcontains "/api/compass/events" -and $paths -contains "/api/completed-courses" -and $paths -notcontains "/api/auth/reset-password" -and $paths -notcontains "/api/auth/forgot-password" -and $paths -contains "/api/auth/login"
     } catch {
         return $false
     }

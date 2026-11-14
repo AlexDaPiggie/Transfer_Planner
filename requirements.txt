@@ -8,5 +8,3 @@ google-auth
 Werkzeug
 itsdangerous
 requests
-beautifulsoup4
-strands-agents

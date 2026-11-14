@@ -14,11 +14,7 @@ frontend/.local-web-error.log
 .venv311/
 *.before-auth.bak
 
-# Integration source checkout and generated event cache
-scratch/campus-compass/
-backend/campus_compass/__pycache__/
-backend/campus_compass/*.db
-backend/campus_compass/*events*.json
+# Generated browser verification screenshots
 scratch/integration-preview/
 tests/__pycache__/
 frontend/tests/__pycache__/

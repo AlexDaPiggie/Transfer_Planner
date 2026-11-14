@@ -1,13 +1,11 @@
 """Account-only authentication endpoints for Pathway (no course/profile storage)."""
 import os
 import re
-import hashlib
-import secrets
 from contextlib import closing
 
 import psycopg2
 from psycopg2.extras import RealDictCursor
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
@@ -26,15 +24,6 @@ class Credentials(BaseModel):
 
 class GoogleCredential(BaseModel):
     credential: str = Field(min_length=1, max_length=20000)
-
-
-class RecoveryEmail(BaseModel):
-    email: str = Field(min_length=3, max_length=254)
-
-
-class ResetPassword(BaseModel):
-    token: str = Field(min_length=32, max_length=200)
-    password: str = Field(min_length=10, max_length=1024)
 
 
 def _require_origin(request: Request) -> None:
@@ -101,8 +90,7 @@ def current_user(request: Request):
 @router.get("/config")
 def config():
     # A Google OAuth *client ID* is public; never return a client secret.
-    from backend.campus_compass.mailer import configured
-    return {"google_client_id": os.getenv("GOOGLE_CLIENT_ID", ""), "password_reset_available": configured()}
+    return {"google_client_id": os.getenv("GOOGLE_CLIENT_ID", "")}
 
 
 @router.post("/signup")
@@ -186,48 +174,6 @@ def me(request: Request):
         request.session.clear()
         return {"logged_in": False}
     return {"logged_in": True, "user": _public_user(user)}
-
-
-@router.post("/forgot-password")
-def forgot_password(payload: RecoveryEmail, request: Request, tasks: BackgroundTasks):
-    _require_origin(request)
-    from backend.campus_compass import mailer
-    if not mailer.configured():
-        raise HTTPException(503, "Password recovery is temporarily unavailable.")
-    email = _valid_email(payload.email)
-    accepted = {"message": "If an account exists for this email, a recovery link will arrive shortly."}
-    user = _get_user("email", email)
-    if not user:
-        return accepted
-    token = secrets.token_urlsafe(40)
-    with closing(get_db_connection()) as conn, conn.cursor() as cur:
-        # Serialize requests for this account to enforce a shared rate limit.
-        cur.execute("SELECT user_id FROM pathway_users WHERE user_id = %s FOR UPDATE", (user["user_id"],))
-        cur.execute("SELECT COUNT(*) FROM pathway_password_resets WHERE user_id = %s AND created_at > NOW() - INTERVAL '15 minutes'", (user["user_id"],))
-        if cur.fetchone()[0] >= 3:
-            return accepted
-        cur.execute("INSERT INTO pathway_password_resets (token_hash, user_id, expires_at) VALUES (%s, %s, NOW() + INTERVAL '1 hour')", (hashlib.sha256(token.encode()).hexdigest(), user["user_id"]))
-        conn.commit()
-    link = f"{mailer.app_url()}/#reset={token}"
-    tasks.add_task(mailer.deliver_account_message, email, "Reset your Pathway password", f"Open this link to reset your password within one hour:\n{link}\n\nIf you did not request this, ignore this message.")
-    return accepted
-
-
-@router.post("/reset-password")
-def reset_password(payload: ResetPassword, request: Request):
-    _require_origin(request)
-    token_hash = hashlib.sha256(payload.token.encode()).hexdigest()
-    password_hash = generate_password_hash(payload.password, method="scrypt")
-    with closing(get_db_connection()) as conn, conn.cursor() as cur:
-        cur.execute("SELECT user_id FROM pathway_password_resets WHERE token_hash = %s AND used_at IS NULL AND expires_at > NOW() FOR UPDATE", (token_hash,))
-        row = cur.fetchone()
-        if not row:
-            raise HTTPException(400, "This recovery link has expired or has already been used.")
-        cur.execute("UPDATE pathway_users SET password_hash = %s, session_version = session_version + 1 WHERE user_id = %s", (password_hash, row[0]))
-        cur.execute("UPDATE pathway_password_resets SET used_at = NOW() WHERE user_id = %s AND used_at IS NULL", (row[0],))
-        conn.commit()
-    request.session.clear()
-    return {"message": "Password updated. Please log in with your new password."}
 
 
 @router.post("/logout")

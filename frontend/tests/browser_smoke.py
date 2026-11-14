@@ -1,7 +1,7 @@
 """Browser verification with isolated mock accounts; never contacts real APIs."""
+import argparse
 import json
 import threading
-from datetime import datetime, timezone
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -17,26 +17,13 @@ class QuietHandler(SimpleHTTPRequestHandler):
         pass
 
 
-def main():
+def main(services_only=False):
     server = ThreadingHTTPServer(("127.0.0.1", 0), partial(QuietHandler, directory=str(ROOT / "frontend")))
     threading.Thread(target=server.serve_forever, daemon=True).start()
     output = ROOT / "scratch" / "integration-preview"
     output.mkdir(parents=True, exist_ok=True)
-    state = {"user": None, "profile": {"transfer_stage": "", "major": "", "interests": []}, "email_enabled": False, "ranks": 0, "extra_events": [], "completed": [], "completion_writes": 0}
-    event = {"title": "Transfer workshop", "date": "2026-10-20", "location": "Transfer Center", "latitude": 37.321623, "longitude": -122.0447979, "description": "Prepare your university application.", "url": "https://example.org/workshop"}
+    state = {"user": None, "completed": [], "completion_writes": 0}
     errors = []
-
-    def set_interests(page, values):
-        pressed = page.locator('#compass-interest-options button[aria-pressed="true"]')
-        while pressed.count():
-            pressed.first.click()
-        for value in (["transfer"] + values if values else []):
-            page.locator(f'#compass-interest-options button[data-interest="{value}"]').click()
-
-    def toggle_transfer(page, enabled):
-        button = page.get_by_role("button", name="Transfer", exact=True)
-        if button.get_attribute("aria-pressed") != str(enabled).lower():
-            button.click()
 
     def respond(route):
         req = route.request
@@ -46,7 +33,7 @@ def main():
         if req.method == "OPTIONS":
             data = {}
         elif path == "/api/auth/config":
-            data = {"google_client_id": "", "password_reset_available": True}
+            data = {"google_client_id": ""}
         elif path == "/api/auth/me":
             data = {"logged_in": bool(state["user"]), "user": state["user"]}
         elif path in ("/api/auth/login", "/api/auth/signup"):
@@ -55,23 +42,6 @@ def main():
         elif path == "/api/auth/logout":
             state["user"] = None
             data = {"logged_in": False}
-        elif path == "/api/auth/reset-password":
-            data = {"message": "Password updated. Please log in with your new password."}
-        elif path == "/api/compass/events":
-            data = {"events": [event, *state["extra_events"]]}
-        elif path == "/api/compass/profile-options":
-            data = {"transfer_stages": [{"value": "", "label": "Not selected"}, {"value": "exploring", "label": "Exploring transfer options"}, {"value": "preparing", "label": "Preparing to transfer"}, {"value": "applying", "label": "Applying this admission cycle"}], "majors": ["Computer Science"]}
-        elif path == "/api/compass/profile":
-            if req.method == "PUT":
-                state["profile"] = body
-            data = {"profile": state["profile"]}
-        elif path == "/api/compass/rerank":
-            state["ranks"] += 1
-            data = {"events": [{**event, "tier": "high", "reason": "This supports your transfer goal."}, *state["extra_events"]]}
-        elif path == "/api/compass/email-preferences":
-            if req.method == "PUT":
-                state["email_enabled"] = body["enabled"]
-            data = {"available": True, "enabled": state["email_enabled"], "pending": False}
         elif path == "/api/completed-courses":
             if req.method == "POST":
                 state["completed"] = [body]
@@ -91,153 +61,46 @@ def main():
             browser = playwright.chromium.launch(channel="msedge", headless=True)
             context = browser.new_context(viewport={"width": 1365, "height": 950})
             context.route("**/api/**", respond)
-            # Exercise graceful map failure while keeping the test offline.
+            # Keep browser verification offline.
             context.route("https://**/*", lambda route: route.abort())
             page = context.new_page()
-            page.clock.install(time=datetime(2026, 10, 16, 19, tzinfo=timezone.utc))
             page.on("pageerror", lambda error: errors.append(str(error)))
             base = f"http://127.0.0.1:{server.server_port}"
             page.goto(base)
-            expect(page.get_by_role("heading", name="One pathway. More possibilities.")).to_be_visible()
+            expect(page.locator(".service-card")).to_have_count(2)
+            expect(page.get_by_role("link", name="De Anza Events", exact=True)).to_have_count(0)
             page.screenshot(path=str(output / "home.png"), full_page=True)
-            page.get_by_role("link", name="Explore campus events").click()
-            expect(page.get_by_role("heading", name="Transfer workshop")).to_be_visible()
-            expect(page.locator(".leaflet-marker-icon")).to_have_count(1)
-            expect(page.get_by_label("Transfer preparation stage", exact=True)).to_have_count(0)
-            toggle_transfer(page, False)
-            expect(page.locator(".compass-event")).to_have_count(0)
-            expect(page.locator(".leaflet-marker-icon")).to_have_count(0)
-            toggle_transfer(page, True)
-            expect(page.locator(".compass-event")).to_have_count(1)
-
-            expect(page.get_by_role("button", name="Save and recommend")).to_be_disabled()
-            page.get_by_role("button", name="Log in / Sign up").click()
+            page.goto(base + "/?service=compass")
+            expect(page.locator("body")).to_have_class("home-view")
+            expect(page.locator(".service-card")).to_have_count(2)
+            page.get_by_role("button", name="Log in / Sign up", exact=True).click()
             page.locator("#auth-email").fill("browser-test@example.invalid")
             page.locator("#auth-password").fill("local-test-password")
             page.locator("#auth-submit").click()
-            expect(page.get_by_role("button", name="Save and recommend")).to_be_enabled()
-            page.get_by_label("Major", exact=True).select_option("Computer Science")
-            set_interests(page, ["career and scholarships", "campus life"])
-            page.get_by_role("button", name="Save and recommend").click()
-            expect(page.locator("#compass-profile-status")).to_have_text("Profile saved. Your recommendations are ready.")
-            assert state["profile"]["interests"] == ["transfer", "career and scholarships", "campus life"]
-            page.reload()
-            expect(page.locator("#compass-profile-status")).to_have_text("Your saved profile and recommendations are ready.")
-            expect(page.get_by_role("button", name="Campus Life", exact=True)).to_have_attribute("aria-pressed", "true")
-            expect(page.get_by_role("button", name="Career & Scholarships", exact=True)).to_have_attribute("aria-pressed", "true")
-            expect(page.locator(".compass-event.priority-high")).to_have_count(1)
-            expect(page.locator(".compass-pin.priority-high")).to_have_count(1)
-            assert page.locator(".compass-pin.priority-high").evaluate("el => getComputedStyle(el).backgroundColor") == "rgb(232, 90, 79)"
-            page.get_by_role("button", name="Clear major", exact=True).click()
-            expect(page.get_by_label("Major", exact=True)).to_have_value("")
-            expect(page.locator("#compass-profile-status")).to_contain_text("Profile changed")
-            set_interests(page, ["campus life"])
-            page.get_by_role("button", name="Save and recommend", exact=True).click()
-            expect(page.locator("#compass-profile-status")).to_have_text("Profile saved. Your recommendations are ready.")
-            assert state["profile"]["major"] == ""
-            assert state["profile"]["interests"] == ["transfer", "campus life"]
-            page.reload()
-            expect(page.locator("#compass-profile-status")).to_have_text("Your saved profile and recommendations are ready.")
-            expect(page.get_by_label("Major", exact=True)).to_have_value("")
-            expect(page.get_by_role("button", name="Campus Life", exact=True)).to_have_attribute("aria-pressed", "true")
-            expect(page.get_by_role("button", name="Clear major", exact=True)).to_be_disabled()
-            set_interests(page, [])
-            page.get_by_role("button", name="Save and recommend", exact=True).click()
-            expect(page.locator("#compass-profile-status")).to_have_text("Profile saved. Your recommendations are ready.")
-            assert state["profile"] == {"transfer_stage": "", "major": "", "interests": []}
-            page.reload()
-            expect(page.locator("#compass-profile-status")).to_have_text("Your profile is linked to your Pathway account.")
-            expect(page.get_by_label("Major", exact=True)).to_have_value("")
-            page.get_by_label("Major", exact=True).select_option("Computer Science")
-            set_interests(page, ["career and scholarships"])
-            page.get_by_role("button", name="Save and recommend", exact=True).click()
-            expect(page.locator("#compass-profile-status")).to_have_text("Profile saved. Your recommendations are ready.")
-            ranks = state["ranks"]
-            page.get_by_role("button", name="Today", exact=True).click()
-            expect(page.locator(".compass-event")).to_have_count(0)
-            expect(page.locator(".leaflet-marker-icon")).to_have_count(0)
-            expect(page.locator("#compass-status")).to_contain_text("No events in this range")
-            page.get_by_role("button", name="1 week", exact=True).click()
-            expect(page.locator(".compass-event.priority-high")).to_have_count(1)
-            expect(page.locator(".compass-pin.priority-high")).to_have_count(1)
-            assert state["ranks"] == ranks, "Changing the range must reuse the existing AI result"
-            page.reload()
-            expect(page.locator("#compass-profile-status")).to_have_text("Your saved profile and recommendations are ready.")
-            expect(page.locator(".compass-pin.priority-high")).to_have_count(1)
-            page.get_by_label("Daily campus event emails", exact=True).check()
-            expect(page.locator("#compass-email-status")).to_contain_text("Daily emails are on")
-            state["extra_events"] = [
-                {**event, "title": "Same-location workshop", "tier": "medium"},
-                {**event, "title": "Library workshop", "location": "Library", "description": "Study skills and library resources", "latitude": 37.318, "longitude": -122.045, "tier": "low"},
-            ]
-            page.reload()
-            expect(page.locator("#compass-profile-status")).to_have_text("Your saved profile and recommendations are ready.")
-            expect(page.locator(".compass-event")).to_have_count(3)
-            expect(page.locator(".leaflet-marker-icon")).to_have_count(2)
-            toggle_transfer(page, False)
-            expect(page.locator(".compass-event")).to_have_count(1)
-            expect(page.get_by_role("heading", name="Library workshop", exact=True)).to_be_visible()
-            page.get_by_role("button", name="Save and recommend", exact=True).click()
-            expect(page.locator("#compass-profile-status")).to_have_text("Profile saved. Your recommendations are ready.")
-            page.reload()
-            expect(page.locator("#compass-profile-status")).to_have_text("Your saved profile and recommendations are ready.")
-            expect(page.get_by_role("button", name="Transfer", exact=True)).to_have_attribute("aria-pressed", "false")
-            expect(page.locator(".compass-event")).to_have_count(1)
-            toggle_transfer(page, True)
-            expect(page.locator(".compass-event")).to_have_count(3)
-            assert page.locator("#compass-events").bounding_box()["x"] > page.locator("#compass-map").bounding_box()["x"]
-            page.locator('.leaflet-marker-icon[title^="2 event"]').click()
-            expect(page.locator(".compass-event")).to_have_count(2)
-            expect(page.get_by_role("heading", name="Library workshop", exact=True)).to_have_count(0)
-            expect(page.locator(".leaflet-popup")).to_have_count(0)
-            expect(page.locator(".leaflet-marker-icon")).to_have_count(2)
-            expect(page.locator(".compass-marker.is-selected")).to_have_count(1)
-            page.screenshot(path=str(output / "compass-location-selection.png"), full_page=True)
-            page.locator('.leaflet-marker-icon[title^="1 event"]').click()
-            expect(page.locator(".compass-event")).to_have_count(1)
-            expect(page.get_by_role("heading", name="Library workshop", exact=True)).to_be_visible()
-            page.get_by_role("button", name="Show all locations", exact=True).click()
-            expect(page.locator(".compass-event")).to_have_count(3)
-            page.locator('.leaflet-marker-icon[title^="2 event"]').click()
-            page.get_by_role("button", name="Today", exact=True).click()
-            expect(page.locator(".compass-event")).to_have_count(0)
-            expect(page.get_by_role("button", name="Show all locations", exact=True)).to_be_hidden()
-            page.get_by_role("button", name="1 week", exact=True).click()
-            expect(page.locator(".compass-event")).to_have_count(3)
-            state["extra_events"] = []
-            page.get_by_role("button", name="Save and recommend", exact=True).click()
-            expect(page.locator("#compass-profile-status")).to_have_text("Profile saved. Your recommendations are ready.")
-            page.reload()
-            expect(page.locator("#compass-profile-status")).to_have_text("Your saved profile and recommendations are ready.")
-            page.screenshot(path=str(output / "compass.png"), full_page=True)
-            page.set_viewport_size({"width": 390, "height": 844})
-            page.screenshot(path=str(output / "compass-mobile.png"), full_page=True)
-            assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), "Mobile page overflows horizontally"
-            page.evaluate("""() => {
-                const original = window.fetch;
-                let delayed = false;
-                window.fetch = async (...args) => {
-                    if (!delayed && String(args[0]).includes('/compass/rerank')) {
-                        delayed = true;
-                        await new Promise(resolve => setTimeout(resolve, 1800));
-                    }
-                    return original(...args);
-                };
-                window.dispatchEvent(new CustomEvent('pathway:auth-changed'));
-            }""")
-            expect(page.locator("#compass-profile-status")).to_have_text("Preparing recommendations for your saved profile...")
-            expect(page.get_by_label("Major", exact=True)).to_be_enabled()
-            page.get_by_role("button", name="Clear major", exact=True).click()
-            set_interests(page, ["campus life"])
-            page.clock.run_for(2000)
-            expect(page.get_by_role("button", name="Save and recommend", exact=True)).to_be_enabled()
-            expect(page.get_by_label("Major", exact=True)).to_have_value("")
-            expect(page.locator("#compass-profile-status")).to_contain_text("Profile changed")
+            expect(page.get_by_role("button", name="Log out", exact=True)).to_be_visible()
             page.get_by_role("button", name="Log out", exact=True).click()
-            expect(page.get_by_role("button", name="Save and recommend")).to_be_disabled()
-            expect(page.locator(".compass-event.priority-high")).to_have_count(0)
-            expect(page.locator(".compass-pin.priority-ranking")).to_have_count(1)
-            page.get_by_role("link", name="Transfer Planner", exact=True).click()
+            page.get_by_role("link", name="De Anza Chatbot", exact=True).click()
+            expect(page.locator(".chatbot-frame")).to_be_visible()
+            chat = page.frame_locator(".chatbot-frame")
+            expect(chat.locator('a[href*="service=compass"]')).to_have_count(0)
+            expect(chat.locator("#input-box")).to_be_visible()
+            page.goto(base)
+            page.set_viewport_size({"width": 390, "height": 844})
+            expect(page.locator(".service-card")).to_have_count(2)
+            assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+            page.screenshot(path=str(output / "home-mobile.png"), full_page=True)
+            page.get_by_role("button", name="Log in / Sign up", exact=True).click()
+            expect(page.get_by_role("button", name="Forgot password?")).to_have_count(0)
+            page.locator("#auth-toggle").click()
+            expect(page.locator("#auth-submit")).to_have_text("Create account")
+            page.locator("#auth-close").click()
+            page.goto(base + "/?service=transfer")
+            expect(page.locator("#college-search")).to_be_enabled()
+            if services_only:
+                assert not errors, errors
+                browser.close()
+                print(json.dumps({"browser": "passed", "checks": ["two services", "retired service fallback", "login and logout", "chatbot navigation", "mobile width", "login and signup without email recovery", "planner loads"]}))
+                return
             expect(page.get_by_role("heading", name="1. Community colleges")).to_be_visible()
             expect(page.locator("#college-search")).to_be_enabled()
             page.set_viewport_size({"width": 1365, "height": 950})
@@ -333,18 +196,14 @@ def main():
             }""")
             expect(combined.locator('[data-course-code="MATH 1B"]')).to_have_count(1)
             expect(combined.locator('[data-course-code="MATH 1B"]').get_by_role("button", name="Mark complete", exact=True)).to_be_enabled()
-            page.goto(base + "/#reset=" + "a" * 50)
-            expect(page.get_by_role("heading", name="Choose a new password")).to_be_visible()
-            expect(page.locator("#auth-email")).to_be_hidden()
-            page.locator("#auth-password").fill("new-local-test-password")
-            page.locator("#auth-submit").click()
-            expect(page.locator("#auth-message")).to_contain_text("Password updated")
             assert not errors, errors
             browser.close()
-        print(json.dumps({"browser": "passed", "checks": ["service navigation", "login", "save profile and rank", "email opt-in", "logout clears personalized results", "mobile width", "password recovery", "date ranges", "AI marker colors", "saved-profile auto ranking", "marker selects event list without popup", "switch and clear location", "range resets unavailable location", "clear major and persist interest-only profile", "clear entire profile", "transfer checkbox filtering and persistence", "major remains editable while AI is pending"], "screenshots": str(output)}))
+        print(json.dumps({"browser": "passed", "checks": ["service navigation", "retired service fallback", "login and logout", "planner layout", "completed courses", "mobile width", "login and signup without email recovery"], "screenshots": str(output)}))
     finally:
         server.shutdown()
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--services-only", action="store_true", help="Check service removal and shared account flows without planner rendering scenarios")
+    main(services_only=parser.parse_args().services_only)

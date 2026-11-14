@@ -3,7 +3,7 @@ import { APP_CONFIG } from "./config.js";
 import { ACTIVE_YEAR_ID, generatePlan, getMajors, getSources, getTargets, sendChat } from "./api.js";
 import { appendMessage, clearSessionMessages, createSession, getAppState, getSavedPlanner, getTheme, savePlanner, selectSession, setTheme } from "./state.js";
 import { escapeHtml, renderCombinedCourseBoard, renderMessages, renderPlan } from "./ui.js";
-import { renderServiceHome, renderCompass, renderChatbot } from "./services.js";
+import { renderServiceHome, renderChatbot } from "./services.js";
 import { startTypingHeadline, typingHeadlineMarkup } from "./typing_headline.js";
 
 const app = document.querySelector("#app");
@@ -612,17 +612,15 @@ async function renderPlanner() {
   }
 }
 
-const selectedService = new URLSearchParams(window.location.search).get("service");
+const requestedService = new URLSearchParams(window.location.search).get("service");
+const selectedService = ["transfer", "chat"].includes(requestedService) ? requestedService : null;
 document.body.classList.toggle("chatbot-view", selectedService === "chat");
 document.body.classList.toggle("home-view", !selectedService);
 document.body.classList.toggle("planner-view", selectedService === "transfer");
-document.body.classList.toggle("events-view", selectedService === "compass");
 document.querySelectorAll(".primary-nav a[data-service]").forEach((link) => {
   if (link.dataset.service === selectedService) link.setAttribute("aria-current", "page");
 });
-if (selectedService === "compass") {
-  renderCompass(app);
-} else if (selectedService === "transfer") {
+if (selectedService === "transfer") {
   renderPlanner();
 } else if (selectedService === "chat") {
   renderChatbot(app);
